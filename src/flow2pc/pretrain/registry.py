@@ -6,7 +6,12 @@ teachers.register(
     "flow2pc.pretrain.models.alicfm.trainer:ALICFM",
     "Original ALI-CFM profiles for CITE/Multi, EB PHATE, ST, knot and cell tracking.",
 )
-for name in ("mfm", "mmfm", "otpfm"):
+teachers.register(
+    "mfm",
+    "flow2pc.pretrain.models.mfm.trainer:MFM",
+    "Native MFM geopath/flow training and frozen paired-checkpoint adapter.",
+)
+for name in ("mmfm", "otpfm"):
     teachers.register(
         name,
         None,
