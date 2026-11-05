@@ -38,7 +38,7 @@ def parser():
     result.add_argument("--epochs", type=int, help="Override teacher epochs per phase")
     result.add_argument("--steps", type=int, help="Override student update count")
     result.add_argument("--batch-size", type=int, help="Override requested batch size for both stages")
-    result.add_argument("--logging", choices=("disabled", "offline", "online"), default="disabled")
+    result.add_argument("--logging", choices=("disabled", "offline", "online"), default="online")
     result.add_argument("--python", default=os.environ.get("FLOW2PC_PYTHON", sys.executable))
     result.add_argument("--links-only", action="store_true", help="For prepare: only create source symlinks/catalog")
     result.add_argument("--dry-run", action="store_true")
@@ -63,7 +63,7 @@ def commands(args, name):
             values["training.epochs"] = args.epochs
         if args.batch_size is not None:
             values["training.batch_size"] = args.batch_size
-        stages.append((ROOT / f"configs/pretrain/mfm/data/{name}.yaml", values))
+        stages.append((ROOT / f"configs/pretrain/mfm/mfm_{name}.yaml", values))
     if args.action in ("distill", "both"):
         students = ("hclt", "gaussian") if args.student == "both" else (args.student,)
         for student in students:
@@ -75,7 +75,7 @@ def commands(args, name):
                 values["distillation.steps"] = args.steps
             if args.batch_size is not None:
                 values["distillation.batch_size"] = args.batch_size
-            stages.append((ROOT / f"configs/distill/mfm/data/{name}/{student}.yaml", values))
+            stages.append((ROOT / f"configs/distill/mfm/mfm_{name}_{student}.yaml", values))
     result = []
     for config, overrides in stages:
         if not config.is_file():

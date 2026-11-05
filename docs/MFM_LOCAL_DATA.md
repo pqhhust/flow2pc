@@ -92,7 +92,7 @@ python scripts/run_mfm_data.py pretrain gom --run-name exp2
 python scripts/run_mfm_data.py distill gom --student hclt --run-name exp2
 ```
 
-Mặc định HCLT, seed 42, W&B disabled, teacher tối đa 1.000 epoch mỗi giai đoạn
+Mặc định HCLT, seed 42, W&B online (project `flow2pc`), teacher tối đa 1.000 epoch mỗi giai đoạn
 có early stopping, student 20.000 update. `--epochs`, `--steps`, `--batch-size`,
 `--seed`, `--device`, `--logging` ghi đè các giá trị liên quan.
 Số epoch là giới hạn, không phải ngân sách đã tune cho mỗi dataset.
@@ -120,18 +120,19 @@ resume qua `--set distillation.resume_checkpoint=...` trên CLI `main.py` hiện
 Muốn distill teacher khác, dùng `distill PROFILE --teacher-run /path/to/pretrain`;
 script lấy đường dẫn snapshot từ binding của teacher, kiểm tra đúng profile.
 
-Các YAML trực tiếp nằm trong `configs/pretrain/mfm/data/` và
-`configs/distill/mfm/data/<profile>/`:
+Các YAML trực tiếp nằm trong `configs/pretrain/mfm/mfm_<profile>.yaml` và
+`configs/distill/mfm/mfm_<profile>_<student>.yaml`:
 
 ```bash
-PYTHONPATH=src python main.py --config configs/pretrain/mfm/data/gom.yaml --validate-only
-PYTHONPATH=src python main.py --config configs/pretrain/mfm/data/gom.yaml
-PYTHONPATH=src python main.py --config configs/distill/mfm/data/gom/hclt.yaml
+PYTHONPATH=src python main.py --config configs/pretrain/mfm/mfm_gom.yaml --validate-only
+PYTHONPATH=src python main.py --config configs/pretrain/mfm/mfm_gom.yaml
+PYTHONPATH=src python main.py --config configs/distill/mfm/mfm_gom_hclt.yaml
 ```
 
 `--validate-only` của MFM kiểm tra cấu hình, không chạy kiểm tra dữ liệu/model
-end-to-end. Các YAML mới mặc định **không chạy post-training evaluation**.
-Validation loss vẫn phục vụ early stopping và chọn checkpoint.
+end-to-end. Các YAML student mặc định **có post-training evaluation** từ `best.pt`,
+gồm EMD và ảnh so sánh teacher ODE/student ODE/direct PC. Validation velocity MSE
+vẫn chọn student checkpoint; xem [quy ước theo dataset](EXPERIMENT_PROTOCOLS.md).
 
 ## Contract khoa học và tương thích
 

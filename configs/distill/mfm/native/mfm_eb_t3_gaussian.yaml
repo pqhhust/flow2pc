@@ -1,0 +1,43 @@
+stage: distill
+teacher:
+  name: mfm
+  checkpoint: checkpoints/metric_flow/eb/ir017qw9/flow_model/epoch=229-step=3680.ckpt
+  params:
+    repo_path: /data/pqhung_group/pdtung/metric-flow-matching
+    geopath_checkpoint: checkpoints/metric_flow/eb/ir017qw9/geopath_model/epoch=9-step=160.ckpt
+data:
+  name: eb
+  root: /data/pqhung_group/pdtung/metric-flow-matching/data
+student:
+  name: gaussian
+  params:
+    num_components: 64
+    time_order: 4
+distillation:
+  validation_scope: dataset
+  validation_population_metrics: true
+  steps: 20000
+  batch_size: 128
+  lr: 0.001
+  device: auto
+  gradient_clip: 1.0
+  log_every: 100
+  validate_every: 1000
+  checkpoint_every: 5000
+  resume_checkpoint: null
+seed: 42
+output:
+  dir: outputs/runs/metric/eb_gaussian_t3
+evaluation:
+  metric_space: dataset
+  solver: dopri5
+  samples: 2048
+  seed: 2026
+  enabled: true
+  projections: 32
+  ode_substeps: 16
+  decode_images: false
+  vae_path: checkpoints/metric_flow/vae
+wandb:
+  project: flow2pc
+  mode: online

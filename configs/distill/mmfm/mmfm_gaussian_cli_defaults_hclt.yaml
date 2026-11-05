@@ -1,0 +1,30 @@
+stage: distill
+seed: 42
+teacher:
+  name: mmfm
+  checkpoint: outputs/mmfm/gaussian_cli_defaults/pretrain/checkpoints/best.pt
+data:
+  name: mfm_snapshots
+  root: data/mfm/prepared/gaussian_cli_defaults/seed42
+student:
+  name: hclt
+  params: {}
+distillation:
+  validation_scope: dataset
+  validation_population_metrics: true
+  steps: 20000
+  batch_size: 128
+  lr: 0.001
+  device: auto
+output:
+  dir: outputs/mmfm/gaussian_cli_defaults/hclt
+evaluation:
+  metric_space: dataset
+  solver: dopri5
+  samples: 2048
+  seed: 2026
+  enabled: true
+  ode_substeps: 16
+wandb:
+  project: flow2pc
+  mode: online

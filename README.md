@@ -37,6 +37,12 @@ also archived. See [the cleanup and migration notes](docs/MIGRATION.md).
 
 ## Setup
 
+Configs are grouped by method in each stage: `configs/pretrain/alicfm/alicfm_gom.yaml`
+trains a teacher; `configs/distill/alicfm/alicfm_gom_hclt.yaml` distills the selected
+existing teacher. Student filenames distinguish `_hclt` and `_gaussian`.
+See [the config layout](configs/README.md) and
+[selected sweep teachers and scores](docs/SELECTED_TEACHERS.md).
+
 ```bash
 python -m pip install -e '.[dev,alicfm]'
 ```
@@ -46,6 +52,12 @@ For MFM, install the optional dependencies with
 paths selected by the configs. No MFM data or weights are downloaded.
 
 ## MFM integration
+
+ALI-CFM and OTP-FM teacher presets also support the prepared Arch/Sphere/LiDAR
+data, preserving the saved MFM splits. An eight-GPU launcher prepares 256
+configurations per dataset per method (1,536 teachers), with validation-only
+rankings, W&B logging and geometry figures. See
+[the teacher sweep and two-observation adaptations](docs/MFM_TEACHER_SWEEP.md).
 
 For all locally available datasets except AFHQ, the new snapshot workflow has
 20 profiles, including the H5AD EB PCA/PHATE representations, transport data and
@@ -60,26 +72,28 @@ python scripts/run_mfm_data.py both cite50 --student both --device cuda:0 --run-
 
 The last command prepares snapshots and starts training. Data sources are linked
 under `data/mfm/sources/`; outputs go under `outputs/mfm/`. New recipes use
-train-only normalization and exclude temporal test holdouts from checkpoint
-selection. See [the complete catalog, commands and protocol](docs/MFM_LOCAL_DATA.md).
+train-only input normalization. Student selection follows the dataset policy
+described in [experiment protocols](docs/EXPERIMENT_PROTOCOLS.md), including
+temporal validation for GOM/Beijing. See [the catalog and commands](docs/MFM_LOCAL_DATA.md).
 Runtime and numerical behavior remain unverified; no model jobs or tests were
 run during implementation. The older workflow below remains available.
 
 MFM pretraining delegates to the original two-phase geopath/flow trainer:
 
 ```bash
-PYTHONPATH=src python main.py --config configs/pretrain/mfm/arch.yaml --validate-only
-PYTHONPATH=src python main.py --config configs/pretrain/mfm/arch.yaml
+PYTHONPATH=src python main.py --config configs/pretrain/mfm/native/mfm_arch_ot.yaml --validate-only
+PYTHONPATH=src python main.py --config configs/pretrain/mfm/native/mfm_arch_ot.yaml
 ```
 
-The 17 runnable MFM pretraining configs are under `configs/pretrain/mfm/`.
+The 17 original MFM pretraining wrappers are under `configs/pretrain/mfm/native/`;
+shared prepared-data presets are `configs/pretrain/mfm/mfm_<dataset>.yaml`.
 Its 22 original MFM/CFM YAML files are preserved under
 `configs/pretrain/mfm/upstream/`; five CFM files are reference-only.
 The trainer writes native Lightning checkpoints. Point a distillation config
 at matching flow and geopath checkpoints, then inspect it with:
 
 ```bash
-PYTHONPATH=src python main.py --config configs/distill/mfm/arch/hclt.yaml --validate-only
+PYTHONPATH=src python main.py --config configs/distill/mfm/native/mfm_arch_hclt.yaml --validate-only
 ```
 
 MFM distillation supports HCLT and Gaussian students with velocity MSE only.
@@ -87,7 +101,9 @@ The HCLT `log_scale` is not clamped. MFM's physical observation labels,
 normalized model times and preprocessing metadata are kept separate. See
 [MFM integration notes](docs/MFM_INTEGRATION.md) for datasets and limitations.
 
-MMFM and the MNIST latent pipeline are not integrated in this checkout.
+MMFM also has native unconditional teacher training, frozen-teacher distillation,
+and teacher/student evaluation configs; see [MMFM integration](docs/MMFM_INTEGRATION.md).
+The MNIST latent pipeline remains retired.
 
 For the unified local bundle in `data/`, use the launcher below. It overrides the
 historical `/data/lthung/...` paths, pairs the ALI-CFM teacher/student checkpoints,
@@ -120,18 +136,15 @@ the matching historical ALI-CFM implementation, rather than changing its
 regularizer. See [dataset support, commands and limitations](docs/ALICFM_DATASETS.md),
 including how to use existing checkpoints with their original preprocessing.
 
-Student validation supports whole held-out times as well as cell splits within
-observed times. When temporal holdouts exist, checkpoint selection uses the mean
-student/teacher velocity MSE across held-out times, querying each cell at its
-recorded model time. Each time receives equal weight; a fixed seeded subset of
-at most `validation_batches * validation_batch_size` cells is used per time.
-GOM/Beijing therefore need no separate validation-cell split. Held-out cells
-remain excluded from student gradient updates. Existing row-validation queries
-are retained as diagnostics where available. Without temporal holdouts, the
-existing selection rule remains in use, including late-time tracking checks.
-The temporal validation protocol is bound to student checkpoints; older students
-selected with a different criterion require a fresh output directory. EMD and
-comparison figures remain part of post-training evaluation.
+Student checkpoint selection uses velocity MSE on the dataset's designated
+validation population. The default is reserved rows at observed times for
+single-cell/ST and held-out-time populations for GOM/Beijing; existing tracking
+late-time checks remain available. `distillation.validation_scope` records the
+policy, and incompatible resumes are rejected. Both direct-PC sampling and ODE
+population metrics are diagnostic only. Final MFM/MMFM evaluation reloads
+`checkpoints/best.pt`; it no longer evaluates the last in-memory student.
+Metrics use exact EMD/W1, with separate W2 reporting for the OTP-FM transport
+benchmarks. See [selection, coupling, coordinates and outputs](docs/EXPERIMENT_PROTOCOLS.md).
 
 To check the complete teacher-to-student workflow, with reference and comparison
 images logged to W&B project `flow2pc`:
@@ -207,10 +220,10 @@ bash scripts/run_otpfm_ali_data_sweep_8gpu.sh --dry-run
 bash scripts/run_otpfm_ali_data_sweep_8gpu.sh
 ```
 
-Standalone OTP-FM teacher configs live in `configs/pretrain/`. For example:
+Standalone OTP-FM teacher configs live in `configs/pretrain/otpfm/`. For example:
 
 ```bash
-python main.py --config configs/pretrain/otpfm_cite50.yaml
+python main.py --config configs/pretrain/otpfm/otpfm_cite50.yaml
 ```
 
 The sweep prepares 1,000 teachers across ten dataset/dimension profiles and defaults
