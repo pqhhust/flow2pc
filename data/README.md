@@ -2,7 +2,7 @@
 
 Tất cả dữ liệu local nằm trực tiếp dưới `data/`, sắp xếp theo bộ dữ liệu thay vì phương pháp: `single_cell/`, `spatial_transcriptomics/`, `cell_tracking/`, `knot/`, `gom/`, `beijing/` và `synthetic/`. ALI-CFM, OTP-FM và MFM dùng chung các file nguồn này.
 
-`mfm/` chứa catalog, liên kết tới dữ liệu nguồn và các snapshot MFM sau khi chạy lệnh `prepare`; hiện chưa có snapshot. LiDAR vẫn nằm ở checkout MFM bên ngoài và được liên kết tại `mfm/sources/lidar`. Output train nằm ngoài `data/`. Đường dẫn `data/...` trong tài liệu được hiểu từ gốc repository.
+`mfm/` chứa catalog, liên kết tới dữ liệu nguồn và các snapshot dùng chung cho MFM/MMFM. Đã chuẩn bị `arch`, `sphere`, `lidar` tại `mfm/prepared/<dataset>/seed42/`, gồm các marginal, split và manifest preprocessing/checksum. LiDAR vẫn nằm ở checkout MFM bên ngoài và được liên kết tại `mfm/sources/lidar`. Output train nằm ngoài `data/`. Đường dẫn `data/...` trong tài liệu được hiểu từ gốc repository.
 
 ## Nguyên tắc dùng dữ liệu
 
@@ -16,6 +16,7 @@ Mỗi bộ dữ liệu cung cấp các marginal quan sát theo thời gian. Khi 
 | `knot/` | Tiến hóa vòng lặp tổng hợp với đường cong giải tích làm tham chiếu. |
 | `gom/`, `beijing/` | Các marginal vận chuyển thực với mốc thời gian holdout. |
 | `synthetic/` | Các marginal Gaussian tổng hợp đã xuất ra NPZ. |
+| `mfm/prepared/{arch,sphere,lidar}/seed42/` | Prepared 2D Arch, 3D Sphere, and 3D LiDAR snapshots for MFM/MMFM. |
 
 Các mục bên dưới giữ chi tiết nguồn gốc, tọa độ, thứ tự dữ liệu và protocol của từng dataset. `SHA256SUMS_ALI_CFM.txt` chứa checksum của các file nguồn ALI-CFM còn giữ lại sau khi gộp tài liệu. `manifest.json` và `source.json` trong các thư mục liên quan ghi checksum dữ liệu và provenance. Các NPZ portable tải bằng `np.load(path, allow_pickle=False)`. Nếu chuyển `data/` sang máy khác, cập nhật `data_dir` tuyệt đối trong các JSON cấu hình vận chuyển.
 
@@ -457,3 +458,88 @@ For fair comparisons, keep the exact exported sample split and evaluation times,
 record the model seed separately from the data seed, and agree on the same metric
 and normalization. There is no canonical single scalar paper target associated
 with these three input files.
+
+## Arch, Sphere, and LiDAR (MFM/MMFM)
+
+### Source and interpretation
+
+The prepared snapshots are in `data/mfm/prepared/<dataset>/seed42/`.
+Arch and Sphere come from `generate_arch_data` and `generate_sphere_data` in
+the original MFM checkout's `mfm/dataloaders/trajectory_data.py`.
+Arch consists of 2D point clouds around a semicircular arc with radial noise;
+Sphere consists of 3D points on a sphere. The generators use OT pairings to
+construct the intermediate distribution. These pairings are part of data
+generation, not observed trajectory IDs in the saved snapshots.
+
+LiDAR uses `rainier2-thin.las` from the original MFM checkout. Its loader
+selects terrain points with `classification == 2`, applies a geometric
+transformation, and generates two 3D endpoint distributions using Gaussian
+mixtures and projection onto the terrain. The endpoint clouds are the observed
+transport marginals; the full ground scene supplies metric reference geometry,
+not a third marginal.
+
+| Dataset | Marginals × points per marginal × dimensions | Snapshot labels | Model times | Temporal holdout |
+| --- | --- | --- | --- | --- |
+| `arch` | 3 × 5,000 × 2 | `[0,1,2]` | `[0,0.5,1]` | index 1 |
+| `sphere` | 3 × 5,000 × 3 | `[0,1,2]` | `[0,0.5,1]` | index 1 |
+| `lidar` | 2 × 5,000 × 3 | `[0,1]` | `[0,1]` | none |
+
+These times are model parameters derived from snapshot order, not physical
+times. For Arch and Sphere, indices 0 and 2 each have 4,500 training rows and
+500 validation rows. Index 1 is a test reference only, with empty training and
+validation index arrays. Both LiDAR marginals have 4,500/500 splits. Rows are
+split independently within each observed marginal. Matching row
+indices across marginals do not identify trajectories.
+
+### Coordinates and prepared files
+
+Arch and Sphere retain the generator coordinates without additional
+normalization. LiDAR stores coordinates after the original MFM loader's
+geometric transformation and `StandardScaler`. The scaler is fitted on the
+**full ground scene**, not just training rows; do not apply it again to the NPY
+files. `metric_0.npy` and `metric_1.npy` contain the two halves of the
+transformed ground scene (17,091 and 17,092 3D points) for metric conditioning.
+They are outside the two LiDAR marginals' training and validation splits.
+
+In each `seed42/` directory, `<i>_values.npy` is a float32 `(5000,dim)` array;
+`<i>_train.npy` and `<i>_validation.npy` contain its row indices.
+`manifest.json` records provenance, hashes for each NPY, seed, labels, model
+times, normalization, and holdouts. The snapshots can be loaded directly
+without source-data symlinks:
+
+```python
+from pathlib import Path
+import json
+import numpy as np
+
+folder = Path("data/mfm/prepared/arch/seed42")  # or sphere/lidar
+manifest = json.loads((folder / "manifest.json").read_text())
+marginals = []
+for i in range(len(manifest["marginal_sizes"])):
+    values = np.load(folder / f"{i}_values.npy", allow_pickle=False)
+    train = np.load(folder / f"{i}_train.npy", allow_pickle=False)
+    val = np.load(folder / f"{i}_validation.npy", allow_pickle=False)
+    marginals.append({"values": values, "train": values[train], "validation": values[val]})
+times = np.asarray(manifest["model_times"])
+```
+
+For model comparisons, use the same NPY files, splits, time grid, and
+coordinate units. Report results at Arch/Sphere index 1 separately from
+training times. For LiDAR, retain `metric_*.npy` as terrain references for
+the original MFM metric protocol.
+
+### Snapshot archive
+
+`data/arch_sphere_lidar_seed42.tar.gz` contains the three snapshot directories
+`data/mfm/prepared/{arch,sphere,lidar}/seed42/`, including NPY files and
+manifests. Reading them does not require source-data symlinks. Absolute source
+paths in the manifests record provenance only. Extract from the destination
+repository root while keeping any existing data:
+
+```bash
+tar --keep-old-files -xzf data/arch_sphere_lidar_seed42.tar.gz
+```
+
+If an `arch_sphere_lidar_seed42.tar.gz.sha256` file accompanies the archive,
+check its checksum from `data/` with
+`sha256sum -c arch_sphere_lidar_seed42.tar.gz.sha256`.
