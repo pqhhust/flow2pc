@@ -20,16 +20,12 @@ configs/
 Pretraining creates a teacher, so its filename has no student suffix. Student
 filenames explicitly distinguish HCLT and Gaussian PCs. Method variants use a
 suffix on the dataset/recipe, such as `otpfm_gom_w2.yaml` or
-`mfm_eb_t2_hclt.yaml`. Names describe existing supported configurations; this
+`mfm_eb_phate2_hclt.yaml`. Names describe existing supported configurations; this
 layout does not imply every method supports every dataset or student type.
 
-MFM additionally retains its original experiment wrappers under
-`pretrain/mfm/native/` and their original-format checkpoint student recipes under
-`distill/mfm/native/`. The primary MFM files use the shared prepared snapshots
-and bound flow/geopath checkpoint pairs. The two paths have different data and
-checkpoint contracts. Native parameter snapshots in `pretrain/mfm/upstream/`
-retain their original filenames and contents because they are source reference
-files, not Flow2PC stage configurations.
+MFM presets use shared prepared snapshots and bound flow/geopath checkpoint
+pairs. Comments in those presets identify the original parameter YAMLs in the
+external MFM checkout; those source YAMLs are not Flow2PC stage configurations.
 
 The organization is shared; method-specific YAML parameters, loss functions and
 training loops remain method-specific. Existing launchers resolve these paths.
