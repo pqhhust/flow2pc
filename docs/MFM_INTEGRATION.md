@@ -1,9 +1,8 @@
 # MFM integration
 
-The additional local snapshot workflow is documented in
-[MFM local data](MFM_LOCAL_DATA.md). It covers 20 non-AFHQ profiles with explicit
-splits/time grids, paired checkpoint export and both retained PC students.
-The native launcher described below retains its historical behavior.
+The shared snapshot workflow is documented in [MFM local data](MFM_LOCAL_DATA.md).
+It covers 20 non-AFHQ profiles with explicit splits/time grids, paired
+checkpoint export and both retained PC students.
 
 Method-owned code lives under `src/flow2pc/pretrain/models/mfm/`, following
 the same organization as ALI-CFM:
@@ -20,47 +19,44 @@ the method's checkpoint adapter. CLI/config callers use the new module paths.
 Shared data, distillation and configuration helpers remain in their own layers.
 This layout does not vendor the upstream trainer into the repository.
 
-Use `scripts/run_mfm.sh` to select a stage and dataset:
+Use `scripts/run_mfm_data.py` to select a profile and stage:
 
 ```bash
-bash scripts/run_mfm.sh pretrain arch
-bash scripts/run_mfm.sh pretrain cite           # 100D OT-MFM, as in the source launcher
-bash scripts/run_mfm.sh pretrain cite5 i-mfm
-bash scripts/run_mfm.sh distill cite            # all available HCLT/Gaussian configs
-bash scripts/run_mfm.sh distill eb hclt_t2       # one checkpoint/holdout variant
-bash scripts/run_mfm.sh distill arch --dry-run  # print commands only
+python scripts/run_mfm_data.py both arch --dry-run
+python scripts/run_mfm_data.py prepare cite5
+python scripts/run_mfm_data.py pretrain cite5
+python scripts/run_mfm_data.py distill cite5 --student both
 ```
 
-Pretraining defaults mirror the original `pretrain/metric-flow-matching/scripts`.
-Distillation enumerates the same student/holdout configs as the source
-`scripts/metric/run_dataset.py`, in sequence, and stops on the first failure.
-It does not include that launcher's GPU scheduler, automatic resume/skip or
-post-training export step. Evaluation configured inside the distillation job
-still follows its YAML settings. Use `FLOW2PC_PYTHON` to select the environment
-and `CUDA_VISIBLE_DEVICES` to restrict GPUs. `--validate-only` and `--set`
-are passed to the shared CLI; `--dry-run` only prints commands and checks that
-the selected config files exist.
+The launcher prepares shared snapshots and selects the matching pretrain and
+student configs. `--dry-run` prints commands without starting jobs. Use
+`FLOW2PC_PYTHON` to select the environment and `CUDA_VISIBLE_DEVICES` to
+restrict GPUs.
 
 Data, logging, output paths and flow/geopath checkpoints are read from the
-existing configs. Distillation does not discover newly pretrained checkpoints;
-set `teacher.checkpoint` and `teacher.params.geopath_checkpoint` to the intended
-pair. Overrides apply to every selected config, so select a single variant when
-overriding `output.dir` or a specific checkpoint pair to avoid mixing runs.
+existing configs. The launcher points student jobs at the flow/geopath pair
+exported by the matching teacher run. Direct CLI invocations need that pair set
+explicitly in `teacher.checkpoint` and `teacher.params.geopath_checkpoint`.
 
-The MFM method is isolated from ALI-CFM's manifest-backed runner. Pretraining
-calls the original code in `../pretrain/metric-flow-matching` (override with
-`FLOW2PC_MFM_PRETRAIN_ROOT` or `model.params.source_root`). Distillation loads
+The MFM method is isolated from ALI-CFM's manifest-backed runner. Snapshot
+pretraining uses model components from `../pretrain/metric-flow-matching`
+(override with `FLOW2PC_MFM_PRETRAIN_ROOT` or `model.params.source_root`).
+The retained native trainer adapter can still load a manually supplied
+original-format config. The snapshot presets record their original parameter
+sources in comments. Distillation loads
 frozen flow and geopath checkpoints with the adapter copied from
 `flow2pc-multi-marginal`; its default source is sibling
 `../metric-flow-matching`, falling back to `FLOW2PC_MFM_PRETRAIN_ROOT` if absent
 (override with `FLOW2PC_MFM_ROOT` or
 `teacher.params.repo_path`). No source algorithm was replaced with TorchCFM.
 
-Configs cover Arch, Sphere, CITE, Multi, EB, LiDAR and AFHQ. The 22 upstream
-YAML files include five CFM reference configs; the 17 MFM wrappers use the
-original MFM objective. Pretraining writes the original Lightning checkpoint
-format under `output.dir/checkpoints/`. The distillation adapter checks the
-flow/geopath pair, records their hashes, and freezes both networks.
+Shared snapshot presets cover Arch, Sphere, CITE, Multi, EB, LiDAR and other
+non-image profiles. Their starting parameters came from the MFM checkout's
+configuration files; the checked-in snapshot was copied on 2026-10-31 from
+commit `e44e03ec6207d2b111c1d51a03dcc53a98f87b95` with local configuration
+changes. Snapshot pretraining exports a bound `.pt` flow/geopath
+pair. The distillation adapter checks the pair, records hashes, and freezes
+both networks.
 
 MFM data loading retains the source's ordinal unit-interval model times. It
 records original observation labels separately as physical times where numeric,

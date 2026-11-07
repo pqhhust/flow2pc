@@ -3,12 +3,12 @@ stage: distill
 seed: 42
 teacher:
   name: mfm
-  checkpoint: outputs/mfm/cell_tracking/default/pretrain/checkpoints/flow.pt
+  checkpoint: outputs/pretrain/mfm/cell_tracking/default/checkpoints/flow.pt
   params:
-    geopath_checkpoint: outputs/mfm/cell_tracking/default/pretrain/checkpoints/geopath.pt
+    geopath_checkpoint: outputs/pretrain/mfm/cell_tracking/default/checkpoints/geopath.pt
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/cell_tracking/seed42
+  root: data/cell_tracking/seed42
 student:
   name: gaussian
   params:
@@ -27,7 +27,7 @@ distillation:
   checkpoint_every: 5000
   resume_checkpoint: null
 output:
-  dir: outputs/mfm/cell_tracking/default/distill/gaussian
+  dir: outputs/distill/mfm/cell_tracking/default/gaussian
 evaluation:
   metric_space: dataset
   solver: dopri5

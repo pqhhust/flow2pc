@@ -31,11 +31,11 @@ giữ nguyên dưới dạng nhãn; không suy diễn midpoint thành thời gia
 ## Bố cục và chuẩn bị
 
 Dữ liệu local nằm dưới một gốc `data/`, không tách theo phương pháp.
-Thư mục `mfm/` chỉ chứa catalog, liên kết nguồn và snapshot do MFM chuẩn bị;
-các bộ dữ liệu gốc nằm ngay bên cạnh và được dùng chung.
+Catalog, liên kết nguồn và snapshot nằm trực tiếp dưới `data/`;
+các bộ dữ liệu gốc ở cùng cấp và được dùng chung.
 
 ```text
-data/mfm/
+data/
   catalog.json
   sources/                 # symlink, không di chuyển hay nhân đôi dữ liệu gốc
     single_cell/
@@ -45,7 +45,7 @@ data/mfm/
     cell_tracking/
     gaussian/
     lidar                  # symlink đến rainier2-thin.las
-  prepared/<profile>/seed42/
+data/<profile>/seed42/
     manifest.json
     <index>_values.npy
     <index>_train.npy
@@ -54,8 +54,8 @@ data/mfm/
 ```
 
 Toàn bộ `data/` được Git bỏ qua. Mã catalog và các YAML được version-control.
-Các symlink/catalog đã được tạo trong checkout này; **snapshot số học chưa được
-materialize**. `prepare` hoặc `both` sẽ thực hiện việc đó khi bạn chạy lệnh.
+Các symlink/catalog và snapshot `arch`, `sphere`, `lidar` đã có trong checkout này.
+Các profile khác cần chạy `prepare` hoặc `both` để tạo snapshot số học.
 
 ```bash
 python scripts/run_mfm_data.py list
@@ -70,8 +70,9 @@ mới nếu muốn tạo một phiên bản khác.
 
 `--bundle` chọn thư mục chứa `single_cell/`, `gom/`, `beijing/`, `synthetic/`;
 mặc định `data/`. `--native-data` chọn nơi có file LiDAR, mặc định
-`../pretrain/metric-flow-matching/data`. `--data-root` chọn đích chuẩn bị,
-mặc định `data/mfm`. `--source-root` chọn checkout MFM. Đường dẫn CLI tương đối
+`../pretrain/metric-flow-matching/data`. `--data-root` chọn gốc snapshot,
+mặc định `data/`; `--catalog-root` chọn nơi chứa catalog và symlink nguồn,
+mặc định `data/`. `--source-root` chọn checkout MFM. Đường dẫn CLI tương đối
 tính từ thư mục gọi lệnh; đường dẫn trong YAML MFM tính từ root repository.
 
 ## Chạy từng profile hoặc tất cả
@@ -81,10 +82,10 @@ tính từ thư mục gọi lệnh; đường dẫn trong YAML MFM tính từ ro
 python scripts/run_mfm_data.py both all --student both --dry-run
 
 # Chuẩn bị → pretrain MFM → distill HCLT, rồi Gaussian.
-python scripts/run_mfm_data.py both cite50 --student both --device cuda:0 --run-name exp1
+python scripts/run_mfm_data.py both cite50 --student both --run-name exp1
 
 # Tất cả 20 profile, tuần tự, dừng ở lỗi đầu tiên.
-python scripts/run_mfm_data.py both all --student both --device cuda:0 --run-name exp1
+python scripts/run_mfm_data.py both all --student both --run-name exp1
 
 # Tách từng bước; pretrain cần snapshot đã được prepare.
 python scripts/run_mfm_data.py prepare gom
@@ -92,27 +93,47 @@ python scripts/run_mfm_data.py pretrain gom --run-name exp2
 python scripts/run_mfm_data.py distill gom --student hclt --run-name exp2
 ```
 
-Mặc định HCLT, seed 42, W&B online (project `flow2pc`), teacher tối đa 1.000 epoch mỗi giai đoạn
+Mặc định HCLT, seed 42, W&B online (project `flow2pc`, group `<profile>-mfm`), teacher tối đa 1.000 epoch mỗi giai đoạn
 có early stopping, student 20.000 update. `--epochs`, `--steps`, `--batch-size`,
 `--seed`, `--device`, `--logging` ghi đè các giá trị liên quan.
 Số epoch là giới hạn, không phải ngân sách đã tune cho mỗi dataset.
 `--python` hoặc `FLOW2PC_PYTHON` chọn Python cho cả preparation và model jobs.
 
+### Tự mở một cửa sổ tmux cho mỗi profile
+
+Trong mỗi cửa sổ tmux, chạy một profile; mặc định script tự chờ GPU trống:
+
+```bash
+FLOW2PC_PYTHON=/data/nvidia/conda_envs/uffm/bin/python \
+  python scripts/run_mfm_data.py prepare cite50
+FLOW2PC_PYTHON=/data/nvidia/conda_envs/uffm/bin/python \
+  python scripts/run_mfm_data.py pretrain cite50 --run-name exp1
+```
+
+Đổi `cite50` thành profile khác ở cửa sổ tiếp theo. Mỗi tiến trình chuẩn bị dữ
+liệu dưới khóa chung, rồi kiểm tra `nvidia-smi` mỗi 20 giây. Khi có GPU được
+phép với ít nhất 8 GiB trống, tiến trình giữ khóa GPU đó trong suốt pretrain;
+GPU được ánh xạ thành `cuda:0` cho mô hình. Nếu dùng `both`, khóa cũng được
+giữ qua bước distill của cùng profile.
+Các tiến trình MFM dùng cùng launcher sẽ không chọn trùng GPU. `--device cuda:0`
+cho phép chọn GPU thủ công nếu cần. `--gpus 0,1`
+giới hạn GPU vật lý và `--min-free-gb 12` đổi ngưỡng bộ nhớ.
+`--dry-run` chỉ in kế hoạch, không kiểm tra GPU hoặc chạy model.
+
 Kết quả:
 
 ```text
-outputs/mfm/<profile>/<run-name>/
-  pretrain/
-    resolved_config.yaml
-    status.json
-    native/{geopath,flow}/best.ckpt
-    checkpoints/{flow,geopath}.pt
-    teacher_pair.json
-  distill/{hclt,gaussian}/
-    checkpoints/{best,last}.pt
-    config.json
-    data_manifest.json
-    metrics.csv
+outputs/pretrain/mfm/<profile>/<run-name>/
+  resolved_config.yaml
+  status.json
+  native/{geopath,flow}/best.ckpt
+  checkpoints/{flow,geopath}.pt
+  teacher_pair.json
+outputs/distill/mfm/<profile>/<run-name>/{hclt,gaussian}/
+  checkpoints/{best,last}.pt
+  config.json
+  data_manifest.json
+  metrics.csv
 ```
 
 Teacher mới yêu cầu thư mục output trống; không tự overwrite/resume. Student
@@ -146,7 +167,7 @@ vẫn chọn student checkpoint; xem [quy ước theo dataset](EXPERIMENT_PROTOC
   source, gồm scaler và hình học từ toàn bộ ground scene; manifest ghi ngoại lệ.
 - Model time lấy từ grid explicit đã lưu; quickstart giữ `[0,.33,.67,1]`.
   Các nguồn còn lại giữ mapping ordinal hiện có và ghi nhãn/đơn vị riêng.
-- Metric LAND chỉ nhận train rows, ngoại trừ LiDAR giữ toàn bộ địa hình
+- Metric LAND/RBF chỉ nhận train rows, ngoại trừ LiDAR giữ toàn bộ địa hình
   conditioning như source gốc (đây không phải marginal test). Không thay địa hình
   bằng chỉ hai đám mây endpoint. Các khoảng MFM nối hai marginal quan sát
   liên tiếp qua một hoặc nhiều holdout. Adapter giữ nguyên loss/optimizer/steps
@@ -159,10 +180,10 @@ vẫn chọn student checkpoint; xem [quy ước theo dataset](EXPERIMENT_PROTOC
   giữ hai nửa địa hình đầy đủ. Đây là pool riêng, không bị cắt theo batch network.
 - Recipe native làm điểm khởi đầu được ghi ở đầu mỗi pretrain YAML. Các bộ mới
   dùng LAND từ recipe EB 5D; không dùng loss TorchCFM thay cho hai giai đoạn MFM.
-  CITE/Multi 50D/100D giữ kiến trúc 1024 của recipe gốc nhưng chuyển sang LAND
-  theo protocol đã chọn (`gamma=0.125`, `rho=0.001`, `alpha_metric=2`), không lấy
-  `rho` âm của metric RBF làm tham số LAND. Đây là adaptation, không phải recipe
-  RBF gốc; các wrapper MFM cũ vẫn giữ RBF.
+  CITE/Multi 50D/100D giữ kiến trúc 1024 và metric RBF của recipe gốc
+  (`gamma=0.2`, `n_centers=150`, `kappa=1.5`, `rho=-2.75`,
+  `metric_epochs=200`, `alpha_metric=1`). Giao thức snapshot và cách chuẩn hóa
+  dữ liệu vẫn khác thí nghiệm gốc.
 - Geopath tốt nhất theo validation được đóng băng cho giai đoạn flow; flow tốt
   nhất theo validation được xuất cùng đúng geopath đó. Pair manifest ràng buộc
   weights, dataset, time grid, split, preprocessing, source hashes và revision.
@@ -172,8 +193,8 @@ vẫn chọn student checkpoint; xem [quy ước theo dataset](EXPERIMENT_PROTOC
   marginal đầu; velocity matching cũng không tự bảo đảm điều đó.
 - Teacher, geopath đều đóng băng khi distill. Student dùng đúng split và tọa độ
   đã chuẩn bị, không fit lại scaler hoặc chia lại dữ liệu.
-- Các recipe/checkpoint cũ và `scripts/run_mfm.sh` giữ đường chạy cũ. Không đổi
-  protocol ALI-CFM/OTP-FM và không đổi toán học HCLT/Gaussian.
+- Các YAML trong checkout MFM bên ngoài vẫn là nguồn tham khảo. Không đổi protocol ALI-CFM/OTP-FM
+  hoặc toán học HCLT/Gaussian.
 
 Môi trường cần optional dependencies `.[metric]` và source MFM. Upstream import
 các helper ảnh ngay trong module trainer vector, nên extra này cũng khai báo

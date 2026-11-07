@@ -15,9 +15,9 @@ def test_mfm_config_dispatch_keeps_ali_schema():
     ali = load_config(ROOT / "configs/pretrain/alicfm/alicfm_cite5.yaml")
     assert ali["stage"] == "pretrain"
     assert ali["model"]["name"] == "alicfm"
-    stage, mfm = load_config(ROOT / "configs/distill/mfm/native/mfm_arch_hclt.yaml")
+    stage, mfm = load_config(ROOT / "configs/distill/mfm/mfm_arch_hclt.yaml")
     assert stage == "distill"
-    assert mfm.teacher["name"] == "metric_flow"
+    assert mfm.teacher["name"] == "mfm"
     assert "source_nll_weight" not in mfm.training
 
 
