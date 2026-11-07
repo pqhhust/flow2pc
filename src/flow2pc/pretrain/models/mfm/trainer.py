@@ -130,8 +130,22 @@ def _prepare_output_data(resolved):
 def run(resolved):
     if resolved.get("backend") == "snapshots":
         from flow2pc.pretrain.models.mfm.snapshots import run as run_snapshots
+        from flow2pc.pretrain.models.mfm.test_emd import evaluate_run, publish_wandb
+        from flow2pc.utils.checkpoint import atomic_json
 
-        return run_snapshots(resolved)
+        output = run_snapshots(resolved)
+        try:
+            report = evaluate_run(output, device=resolved["config"]["training"]["device"])
+        except Exception as error:
+            atomic_json(output / "eval/status.json", {"status": "failed", "error": str(error)})
+            print(f"MFM teacher is complete, but evaluation failed: {error}", flush=True)
+        else:
+            try:
+                publish_wandb(output, report)
+            except Exception as error:
+                atomic_json(output / "eval/wandb_status.json", {"status": "failed", "error": str(error)})
+                print(f"MFM local evaluation is complete, but W&B logging failed: {error}", flush=True)
+        return output
     output = _prepare_output_data(resolved)
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (
