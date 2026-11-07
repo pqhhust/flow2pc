@@ -18,6 +18,8 @@ DEFAULTS = {
     "activation_geopath": "selu", "activation_flow": "selu", "time_geopath": True,
     "sigma": 0.1, "optimal_transport_method": "exact", "velocity_metric": "land",
     "gamma_current": 0.125, "rho": 0.001, "alpha_metric": 2.0,
+    "n_centers": 100, "kappa": 1.0, "metric_epochs": 50,
+    "metric_patience": 5, "metric_lr": 0.01,
     "geopath_optimizer": "adam", "geopath_lr": 1e-4, "geopath_weight_decay": 1e-5,
     "flow_optimizer": "adamw", "flow_lr": 1e-3, "flow_weight_decay": 1e-5,
 }
@@ -61,13 +63,22 @@ def prepare(config):
     if set(native) - DEFAULTS.keys():
         raise ValueError(f"Unknown native options: {set(native) - DEFAULTS.keys()}")
     native = {**DEFAULTS, **native}
-    if native["velocity_metric"] != "land" or native["optimal_transport_method"] not in ("exact", "None"):
-        raise ValueError("Snapshot recipes use original LAND and exact OT or independent coupling")
+    if (native["velocity_metric"] not in ("land", "rbf")
+            or native["optimal_transport_method"] not in ("exact", "None")):
+        raise ValueError("Snapshot recipes use original LAND/RBF and exact OT or independent coupling")
     for key in ("hidden_dims_geopath", "hidden_dims_flow"):
         if not isinstance(native[key], list) or not native[key] or any(type(x) is not int or x < 1 for x in native[key]):
             raise ValueError(f"Invalid {key}")
-    for key in ("gamma_current", "rho", "alpha_metric", "geopath_lr", "flow_lr"):
+    for key in ("gamma_current", "alpha_metric", "geopath_lr", "flow_lr", "kappa", "metric_lr"):
         if type(native[key]) not in (int, float) or not math.isfinite(native[key]) or native[key] <= 0:
+            raise ValueError(f"Invalid {key}")
+    if (type(native["rho"]) not in (int, float)
+            or not math.isfinite(native["rho"])
+            or (native["velocity_metric"] == "land" and native["rho"] <= 0)
+            or (native["velocity_metric"] == "rbf" and native["rho"] == 0)):
+        raise ValueError("Invalid rho")
+    for key in ("n_centers", "metric_epochs", "metric_patience"):
+        if type(native[key]) is not int or native[key] < 1:
             raise ValueError(f"Invalid {key}")
     for key in ("sigma", "geopath_weight_decay", "flow_weight_decay"):
         if type(native[key]) not in (int, float) or not math.isfinite(native[key]) or native[key] < 0:
@@ -94,7 +105,7 @@ def prepare(config):
     wandb = config.setdefault("wandb", {"mode": "disabled"})
     if not isinstance(wandb, dict):
         raise ValueError("wandb must be a mapping")
-    if set(wandb) - {"mode", "project", "run_name"} or wandb.get("mode", "disabled") not in ("disabled", "offline", "online"):
+    if set(wandb) - {"mode", "project", "group", "run_name"} or wandb.get("mode", "disabled") not in ("disabled", "offline", "online"):
         raise ValueError("Invalid wandb configuration")
     if set(config["output"]) != {"dir"}:
         raise ValueError("output requires dir")
@@ -155,8 +166,7 @@ def run(resolved):
     devices = [int(device.split(":")[1]) if ":" in device else 0] if accelerator == "gpu" else 1
     args = SimpleNamespace(**params["native"], dim=data.dim, data_type="snapshots",
                            data_name=data.source_info["profile"], seed_current=config["seed"],
-                           mfm=True, whiten=False, working_dir=str(output), accelerator=accelerator,
-                           n_centers=100, kappa=1.0, metric_epochs=50, metric_patience=5, metric_lr=0.01)
+                           mfm=True, whiten=False, working_dir=str(output), accelerator=accelerator)
     geo_net = make_network(vars(args), geopath=True, repo_path=source)
     flow_net = make_network(vars(args), repo_path=source)
     matcher = matcher_cls(geopath_net=geo_net, sigma=args.sigma, alpha=1.0)
@@ -175,7 +185,7 @@ def run(resolved):
     tracking = config.get("wandb", {})
     if tracking.get("mode", "disabled") != "disabled":
         logger = WandbLogger(project=tracking.get("project", "flow2pc"),
-                             name=tracking.get("run_name"), save_dir=str(output),
+                             group=tracking.get("group"), name=tracking.get("run_name"), save_dir=str(output),
                              offline=tracking["mode"] == "offline")
 
     def trainer(phase, monitor, patience):

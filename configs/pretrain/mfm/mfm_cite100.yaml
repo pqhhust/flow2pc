@@ -1,6 +1,6 @@
-# Snapshot protocol v1; native parameter starting point: configs/pretrain/mfm/upstream/single_cell/100dims/ot-mfm_cite.yaml
+# Snapshot protocol v1; native parameter starting point: ../pretrain/metric-flow-matching/configs/single_cell/100dims/ot-mfm_cite.yaml
 # New adaptations are not claims of published reproduction.
-# Approved LAND adaptation; upstream RBF rho is not a LAND parameter.
+# Upstream RBF metric parameters for the corresponding dataset and dimension.
 stage: pretrain
 seed: 42
 model:
@@ -21,10 +21,13 @@ model:
       time_geopath: true
       sigma: 0.1
       optimal_transport_method: exact
-      velocity_metric: land
-      gamma_current: 0.125
-      rho: 0.001
-      alpha_metric: 2.0
+      velocity_metric: rbf
+      gamma_current: 0.2
+      n_centers: 150
+      kappa: 1.5
+      metric_epochs: 200
+      rho: -2.75
+      alpha_metric: 1.0
       geopath_optimizer: adam
       geopath_lr: 0.0001
       geopath_weight_decay: 1.0e-05
@@ -33,7 +36,7 @@ model:
       flow_weight_decay: 1.0e-05
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/cite100/seed42
+  root: data/cite100/seed42
   params:
     profile: cite100
 training:
@@ -44,7 +47,7 @@ training:
   patience_flow: 25
   validate_every: 1
 output:
-  dir: outputs/mfm/cite100/default/pretrain
+  dir: outputs/pretrain/mfm/cite100/default
 wandb:
   project: flow2pc
   mode: online

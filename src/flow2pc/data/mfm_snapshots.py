@@ -164,7 +164,7 @@ def split_and_normalize(clouds, spec, seed, fixed=None):
     return normalized, splits, normalization
 
 
-def prepare_dataset(name, root, seed, source_root):
+def prepare_dataset(name, root, seed, source_root, *, catalog_root=None):
     spec = profile(name)
     destination = prepared_path(root, name, seed)
     if destination.exists():
@@ -175,7 +175,9 @@ def prepare_dataset(name, root, seed, source_root):
             if fingerprint(record["path"]) != record["sha256"]:
                 raise ValueError("Source changed; preserve prepared data and use a fresh data root")
         return destination
-    clouds, info, fixed, metric_reference = read_source(name, root, seed, source_root)
+    clouds, info, fixed, metric_reference = read_source(
+        name, catalog_root if catalog_root is not None else root, seed, source_root
+    )
     clouds, splits, normalization = split_and_normalize(clouds, spec, seed, fixed)
     if spec["family"] == "lidar":
         # Native loader has already applied this scaler. Record it for inverse
