@@ -17,19 +17,23 @@ The former `pretrain/mfm_native.py` is now `models/mfm/trainer.py`;
 the MFM-only `pretrain/metric_backends.py` registry was removed in favor of
 the method's checkpoint adapter. CLI/config callers use the new module paths.
 Shared data, distillation and configuration helpers remain in their own layers.
-This layout does not vendor the upstream trainer into the repository.
+The native CITE/MULTI paths now bundle the upstream MFM modules under
+`models/mfm/_source/`; see `NOTICE.md` for provenance.
 
 Use `scripts/run_mfm_data.py` to select a profile and stage:
 
 ```bash
-python scripts/run_mfm_data.py both arch --dry-run
+python scripts/run_mfm_data.py pretrain cite100 --dry-run
+python scripts/run_mfm_data.py pretrain multi5 --dry-run
 python scripts/run_mfm_data.py prepare cite5
-python scripts/run_mfm_data.py pretrain cite5
-python scripts/run_mfm_data.py distill cite5 --student both
+python scripts/run_mfm_data.py pretrain cite100
+python scripts/run_mfm_data.py distill cite5 --student both --teacher-run <snapshot-run>
 ```
 
-The launcher prepares shared snapshots and selects the matching pretrain and
-student configs. `--dry-run` prints commands without starting jobs. Use
+The launcher trains CITE-5/50/100 and MULTI-5/50/100 through the bundled original MFM code without a
+backend switch. Prepared-snapshot distillation remains available for existing
+snapshot checkpoint pairs; automatic `both` is unavailable. `--dry-run` prints
+commands without starting jobs. Use
 `FLOW2PC_PYTHON` to select the environment and `CUDA_VISIBLE_DEVICES` to
 restrict GPUs.
 
@@ -38,20 +42,19 @@ existing configs. The launcher points student jobs at the flow/geopath pair
 exported by the matching teacher run. Direct CLI invocations need that pair set
 explicitly in `teacher.checkpoint` and `teacher.params.geopath_checkpoint`.
 
-The MFM method is isolated from ALI-CFM's manifest-backed runner. Snapshot
-pretraining uses model components from `../pretrain/metric-flow-matching`
-(override with `FLOW2PC_MFM_PRETRAIN_ROOT` or `model.params.source_root`).
-The retained native trainer adapter can still load a manually supplied
-original-format config. The snapshot presets record their original parameter
+The MFM method is isolated from ALI-CFM's manifest-backed runner. New snapshot
+pretraining uses the bundled MFM implementation by default; an explicit
+`model.params.source_root` can select a separate checkout.
+The native presets use the bundled implementation and Flow2PC-local
+parameter YAML. The snapshot presets record their original parameter
 sources in comments. Distillation loads
 frozen flow and geopath checkpoints with the adapter copied from
-`flow2pc-multi-marginal`; its default source is sibling
-`../metric-flow-matching`, falling back to `FLOW2PC_MFM_PRETRAIN_ROOT` if absent
-(override with `FLOW2PC_MFM_ROOT` or
-`teacher.params.repo_path`). No source algorithm was replaced with TorchCFM.
+`flow2pc-multi-marginal`; the loader uses the run's saved source path for
+existing snapshot checkpoints. No source algorithm was replaced with a generic
+TorchCFM loss.
 
-Shared snapshot presets cover Arch, Sphere, CITE, Multi, EB, LiDAR and other
-non-image profiles. Their starting parameters came from the MFM checkout's
+Shared snapshot presets cover remaining profiles, including LiDAR, and other
+non-image datasets. Their starting parameters came from the MFM checkout's
 configuration files; the checked-in snapshot was copied on 2026-10-31 from
 commit `e44e03ec6207d2b111c1d51a03dcc53a98f87b95` with local configuration
 changes. Snapshot pretraining exports a bound `.pt` flow/geopath
@@ -73,11 +76,10 @@ training-only normalization rule; changing it requires retraining the teacher.
 
 MMFM is integrated separately; see [its integration notes](MMFM_INTEGRATION.md).
 `ConditionalGaussianPC`, MNIST latent code and source benchmark launchers were
-not copied. The migrated MFM
-code requires its original external source and data/checkpoint files; the
-metadata-only CLI can be checked without them except for pretraining source
-and data path existence. Runtime numerical parity and checkpoint reload still
-need verification when test execution is authorized.
+not copied. The native CITE/MULTI paths use the existing raw files under
+`flow2pc/data/single_cell` and no external source checkout. Snapshot runs and
+legacy checkpoints may still refer to an external checkout. Runtime numerical
+parity and checkpoint reload still need verification when test execution is authorized.
 
 Student presets now enable final evaluation and W&B project `flow2pc`.
 `best.pt` is restored for final evaluation, both direct-PC and ODE predictions

@@ -109,7 +109,7 @@ def resolve_config(raw, *, base):
     logging = mapping(
         config.setdefault("logging", {}),
         "logging",
-        {"mode", "project", "entity", "name"},
+        {"mode", "project", "entity", "name", "group"},
     )
     if logging.setdefault("mode", "disabled") not in ("disabled", "offline", "online"):
         raise ValueError("logging.mode must be disabled, offline or online")

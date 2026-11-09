@@ -50,6 +50,64 @@ def test_native_mfm_pretraining_uses_paired_source_config(tmp_path):
         load_config(config)
 
 
+@pytest.mark.parametrize("name,family,filename", [
+    ("cite5", "cite", "op_cite_inputs_0.h5ad"),
+    ("cite50", "cite", "op_cite_inputs_0.h5ad"),
+    ("cite100", "cite", "op_cite_inputs_0.h5ad"),
+    ("multi5", "multi", "op_train_multi_targets_0.h5ad"),
+    ("multi100", "multi", "op_train_multi_targets_0.h5ad"),
+])
+def test_bundled_native_entry_uses_local_code_and_data(tmp_path, name, family, filename):
+    from flow2pc.pretrain.models.mfm.trainer import prepare
+    from flow2pc.utils.paths import MFM_LOCAL_ROOT
+
+    config = yaml.safe_load((ROOT / f"configs/pretrain/mfm/mfm_{name}.yaml").read_text())
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / filename).touch()
+    config["data"]["root"] = str(data)
+    config["output"]["dir"] = str(tmp_path / "run")
+    resolved = prepare(config)
+    assert resolved["source_root"] == str(MFM_LOCAL_ROOT.resolve())
+    assert resolved["command"][1:3] == [
+        "-m", "flow2pc.pretrain.models.mfm._source.mfm.train.main",
+    ]
+    assert resolved["data_root"] == str(data)
+    assert config["data"]["name"] == family
+    assert not (tmp_path / "run").exists()
+
+
+def test_native_default_output_creates_a_new_folder_per_run(tmp_path, monkeypatch):
+    from flow2pc.pretrain.models.mfm import trainer
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "op_cite_inputs_0.h5ad").touch()
+    resolved = {
+        "output_dir": str(tmp_path / "cite100/default"),
+        "data_root": str(data), "input_name": "op_cite_inputs_0.h5ad",
+        "source_root": str(tmp_path), "command": ["python", "-m", "mfm", "--working_dir", str(tmp_path / "cite100/default")],
+    }
+    commands = []
+    monkeypatch.setattr(trainer.subprocess, "run", lambda command, **kwargs: commands.append(command))
+    first = trainer.run(resolved)
+    second = trainer.run(resolved)
+    assert first != second
+    assert first.parent == second.parent == tmp_path / "cite100"
+    assert commands[0][-1] == str(first) and commands[1][-1] == str(second)
+    assert not (tmp_path / "cite100/default").exists()
+
+
+def test_snapshot_preparation_defaults_to_bundled_mfm_source():
+    from flow2pc.pretrain.models.mfm.trainer import prepare
+    from flow2pc.utils.paths import MFM_LOCAL_ROOT
+
+    config = yaml.safe_load((ROOT / "configs/pretrain/mfm/snapshots/mfm_cite100.yaml").read_text())
+    resolved = prepare(config)
+    assert resolved["config"]["model"]["params"]["source_root"] == str(MFM_LOCAL_ROOT.resolve())
+    assert "source_root" not in config["model"]["params"]
+
+
 def _resolved_input(tmp_path, dataset):
     from flow2pc.pretrain.models.mfm.trainer import DATA_TYPES, prepare
 

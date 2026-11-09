@@ -8,12 +8,20 @@ def make_network(args, *, geopath=False, repo_path=None):
         suffix = "_geopath" if geopath else ""
         kwargs = {
             "dim": sample_shape(args),
-            "num_channels": args.get("unet_num_channels" + suffix, 128),
-            "num_res_blocks": args.get("unet_num_res_blocks" + suffix, 2),
-            "channel_mult": args.get("unet_channel_mult" + suffix),
-            "dropout": args.get("unet_dropout" + suffix, 0.0),
+            "num_channels": args.get(
+                "unet_num_channels" + suffix, 64 if geopath else 128
+            ),
+            "num_res_blocks": args.get(
+                "unet_num_res_blocks" + suffix, 2 if geopath else 4
+            ),
+            "channel_mult": args.get(
+                "unet_channel_mult" + suffix,
+                [1, 2, 2] if geopath else [2, 2, 2],
+            ),
+            "dropout": args.get("unet_dropout" + suffix, 0.0 if geopath else 0.1),
         }
         if geopath:
+            kwargs["use_checkpoint"] = False
             return source_module(
                 "networks.geopath_networks.unet", repo_path
             ).GeoPathUNet(**kwargs)
