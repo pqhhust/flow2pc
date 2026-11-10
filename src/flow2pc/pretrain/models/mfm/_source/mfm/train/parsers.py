@@ -104,12 +104,6 @@ def datasets_parser(parser):
         default=True,
         help="Whiten the data",
     )
-    parser.add_argument(
-        "--minmax",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Scale each feature to [0, 1] after optional whitening",
-    )
     return parser
 
 

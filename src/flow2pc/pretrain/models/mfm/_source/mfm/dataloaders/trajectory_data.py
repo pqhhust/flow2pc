@@ -23,7 +23,6 @@ class TemporalDataModule(pl.LightningDataModule):
         self.split_ratios = args.split_ratios
         self.max_dim = args.dim
         self.whiten = args.whiten
-        self.minmax = getattr(args, "minmax", False)
         self.skipped_datapoint = skipped_datapoint
         self._prepare_data()
 
@@ -47,14 +46,6 @@ class TemporalDataModule(pl.LightningDataModule):
         if self.whiten:
             self.scaler = StandardScaler()
             ds = self.scaler.fit_transform(ds)
-        if self.minmax:
-            self.minmax_min = ds.min(axis=0)
-            self.minmax_max = ds.max(axis=0)
-            span = self.minmax_max - self.minmax_min
-            if (span <= 0).any():
-                raise ValueError("Min-max normalization requires a positive feature range")
-            ds = (ds - self.minmax_min) / span
-
         ds_tensor = torch.tensor(ds, dtype=torch.float32)
         label_to_numeric = {label: idx for idx, label in enumerate(unique_labels)}
         frame_indices = {

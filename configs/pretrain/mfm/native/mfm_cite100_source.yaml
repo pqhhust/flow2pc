@@ -8,7 +8,6 @@ dim: 100
 t_exclude: [1, 2]
 time_geopath: true
 whiten: false
-minmax: true
 velocity_metric: rbf
 patience: 25
 n_centers: 150

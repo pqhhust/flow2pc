@@ -15,8 +15,7 @@ python scripts/run_mfm_data.py pretrain multi100
 
 The entry configs are `mfm_{arch,sphere,cite5,cite50,cite100,eb_pca5,multi5,multi50,multi100}.yaml`;
 their native parameter YAMLs are under `configs/pretrain/mfm/native/` and
-match the corresponding upstream OT-MFM settings. CITE additionally applies
-the user-requested min-max transform after optional whitening.
+match the corresponding upstream OT-MFM settings.
 Training imports the bundled
 MFM implementation under `flow2pc.pretrain.models.mfm._source`, not the
 external checkout. The launcher leaves the input file untouched and reserves
