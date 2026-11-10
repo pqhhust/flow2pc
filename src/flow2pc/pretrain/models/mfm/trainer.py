@@ -1,13 +1,16 @@
 """Delegate MFM pretraining to its original geopath and flow trainer."""
 
 import os
+import copy
+from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 import sys
+import uuid
 
 import yaml
 
-from flow2pc.utils.paths import MFM_PRETRAIN_ROOT, REPO_ROOT
+from flow2pc.utils.paths import MFM_LOCAL_ROOT, REPO_ROOT
 
 
 DATA_TYPES = {
@@ -15,10 +18,27 @@ DATA_TYPES = {
     "sphere": ("sphere", None),
     "cite": ("scrna", "op_cite_inputs_0.h5ad"),
     "multi": ("scrna", "op_train_multi_targets_0.h5ad"),
-    "eb": ("scrna", "eb_velocity_v5.npz"),
+    "eb": ("scrna", "ebdata_v3.h5ad"),
     "lidar": ("lidar", "rainier2-thin.las"),
     "afhq": ("image", "afhq"),
 }
+
+
+def new_run_name():
+    return f"run-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex}"
+
+
+def reserve_snapshot_output(resolved):
+    selected = copy.deepcopy(resolved)
+    output = Path(selected["config"]["output"]["dir"])
+    if output.name == "default":
+        output = output.with_name(new_run_name())
+    try:
+        output.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(f"Refusing to overwrite existing MFM run: {output}") from error
+    selected["config"]["output"]["dir"] = str(output)
+    return selected
 
 
 def _path(value, label, base=REPO_ROOT):
@@ -42,6 +62,8 @@ def prepare(config):
     if config.get("model", {}).get("params", {}).get("backend") == "snapshots":
         from flow2pc.pretrain.models.mfm.snapshots import prepare as prepare_snapshots
 
+        config = copy.deepcopy(config)
+        config["model"]["params"].setdefault("source_root", str(MFM_LOCAL_ROOT))
         return prepare_snapshots(config)
     _mapping(config, "MFM config", {"stage", "model", "data", "training", "seed", "output"},
              {"stage", "model", "data", "training", "output"})
@@ -58,7 +80,7 @@ def prepare(config):
         raise ValueError("seed must be an integer in [0, 2**32)")
     if data["name"] not in DATA_TYPES:
         raise ValueError(f"Unsupported MFM dataset: {data['name']}")
-    source = _path(params.get("source_root", str(MFM_PRETRAIN_ROOT)), "model.params.source_root")
+    source = _path(params.get("source_root", str(MFM_LOCAL_ROOT)), "model.params.source_root")
     if not (source / "mfm/train/main.py").is_file():
         raise FileNotFoundError(f"MFM trainer is missing under {source}")
     config_name = params["config_path"]
@@ -85,12 +107,24 @@ def prepare(config):
     if filename and not (data_root / filename).exists():
         raise FileNotFoundError(f"MFM input is missing: {data_root / filename}")
     output_dir = _path(output["dir"], "output.dir")
+    module = (
+        "flow2pc.pretrain.models.mfm._source.mfm.train.main"
+        if source == MFM_LOCAL_ROOT.resolve() else "mfm.train.main"
+    )
+    source_groups = {
+        "arch": "arch_ot-mfm",
+        "sphere": "sphere_mfm",
+        "lidar": "lidar_mfm",
+    }
+    command = [sys.executable, "-m", module, "--config_path", str(native_config)]
+    if data["name"] in source_groups:
+        command.extend(("--wandb_group", source_groups[data["name"]]))
+    command.extend(("--working_dir", str(output_dir)))
     return {
         "method": "mfm", "source_root": str(source), "data_root": str(data_root),
         "native_config": str(native_config), "output_dir": str(output_dir),
         "input_name": filename,
-        "command": [sys.executable, "-m", "mfm.train.main", "--config_path",
-                    str(native_config), "--working_dir", str(output_dir)],
+        "command": command,
     }
 
 
@@ -133,6 +167,7 @@ def run(resolved):
         from flow2pc.pretrain.models.mfm.test_emd import evaluate_run, publish_wandb
         from flow2pc.utils.checkpoint import atomic_json
 
+        resolved = reserve_snapshot_output(resolved)
         output = run_snapshots(resolved)
         try:
             report = evaluate_run(output, device=resolved["config"]["training"]["device"])
@@ -146,10 +181,15 @@ def run(resolved):
                 atomic_json(output / "eval/wandb_status.json", {"status": "failed", "error": str(error)})
                 print(f"MFM local evaluation is complete, but W&B logging failed: {error}", flush=True)
         return output
+    if Path(resolved["output_dir"]).name == "default":
+        output = Path(resolved["output_dir"]).with_name(new_run_name())
+        command = list(resolved["command"])
+        command[-1] = str(output)
+        resolved = {**resolved, "output_dir": str(output), "command": command}
     output = _prepare_output_data(resolved)
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (
-        resolved["source_root"], env.get("PYTHONPATH"))))
+        str(REPO_ROOT / "src"), resolved["source_root"], env.get("PYTHONPATH"))))
     subprocess.run(resolved["command"], cwd=resolved["source_root"], env=env, check=True)
     return output
 

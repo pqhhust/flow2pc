@@ -55,7 +55,7 @@ data/<profile>/seed42/
 
 Toàn bộ `data/` được Git bỏ qua. Mã catalog và các YAML được version-control.
 Các symlink/catalog và snapshot `arch`, `sphere`, `lidar` đã có trong checkout này.
-Các profile khác cần chạy `prepare` hoặc `both` để tạo snapshot số học.
+Các profile khác có thể chạy `prepare` để tạo snapshot số học cho checkpoint cũ.
 
 ```bash
 python scripts/run_mfm_data.py list
@@ -72,55 +72,53 @@ mới nếu muốn tạo một phiên bản khác.
 mặc định `data/`. `--native-data` chọn nơi có file LiDAR, mặc định
 `../pretrain/metric-flow-matching/data`. `--data-root` chọn gốc snapshot,
 mặc định `data/`; `--catalog-root` chọn nơi chứa catalog và symlink nguồn,
-mặc định `data/`. `--source-root` chọn checkout MFM. Đường dẫn CLI tương đối
+mặc định `data/`. `--source-root` chọn nguồn MFM cho bước chuẩn bị snapshot;
+nguồn mặc định là bản mã trong Flow2PC. Đường dẫn CLI tương đối
 tính từ thư mục gọi lệnh; đường dẫn trong YAML MFM tính từ root repository.
 
 ## Chạy từng profile hoặc tất cả
 
 ```bash
-# Chỉ in kế hoạch và lệnh; không ghi file, không load dữ liệu/model.
-python scripts/run_mfm_data.py both all --student both --dry-run
+# Chỉ in kế hoạch; không ghi file, không load dữ liệu/model.
+python scripts/run_mfm_data.py pretrain cite100 --dry-run
 
-# Chuẩn bị → pretrain MFM → distill HCLT, rồi Gaussian.
-python scripts/run_mfm_data.py both cite50 --student both --run-name exp1
+# CITE-5/50/100 và MULTI-5/100: mã và tham số MFM gốc, file thô trong flow2pc/data.
+python scripts/run_mfm_data.py pretrain cite100 --run-name exp1
+python scripts/run_mfm_data.py pretrain multi100 --run-name exp2
 
-# Tất cả 20 profile, tuần tự, dừng ở lỗi đầu tiên.
-python scripts/run_mfm_data.py both all --student both --run-name exp1
+# Có thể chuẩn bị snapshot cho các profile cũ, không huấn luyện lại bằng launcher.
+python scripts/run_mfm_data.py prepare all
 
-# Tách từng bước; pretrain cần snapshot đã được prepare.
-python scripts/run_mfm_data.py prepare gom
-python scripts/run_mfm_data.py pretrain gom --run-name exp2
-python scripts/run_mfm_data.py distill gom --student hclt --run-name exp2
+# Distill checkpoint snapshot cũ bằng đường dẫn teacher tường minh.
+python scripts/run_mfm_data.py distill gom --student hclt --teacher-run <snapshot-run>
 ```
 
-Mặc định HCLT, seed 42, W&B online (project `flow2pc`, group `<profile>-mfm`), teacher tối đa 1.000 epoch mỗi giai đoạn
-có early stopping, student 20.000 update. `--epochs`, `--steps`, `--batch-size`,
-`--seed`, `--device`, `--logging` ghi đè các giá trị liên quan.
+Pretrain các profile native giữ nguyên seed 42 và tham số YAML gốc; launcher không nhận
+ghi đè epoch, batch size hoặc logging cho run này. Các tùy chọn student chỉ áp
+dụng khi distill checkpoint snapshot cũ.
 Số epoch là giới hạn, không phải ngân sách đã tune cho mỗi dataset.
 `--python` hoặc `FLOW2PC_PYTHON` chọn Python cho cả preparation và model jobs.
 
-### Tự mở một cửa sổ tmux cho mỗi profile
+### Chạy native CITE/MULTI trong tmux
 
-Trong mỗi cửa sổ tmux, chạy một profile; mặc định script tự chờ GPU trống:
+Mặc định script tự chờ GPU trống:
 
 ```bash
 FLOW2PC_PYTHON=/data/nvidia/conda_envs/uffm/bin/python \
-  python scripts/run_mfm_data.py prepare cite50
-FLOW2PC_PYTHON=/data/nvidia/conda_envs/uffm/bin/python \
-  python scripts/run_mfm_data.py pretrain cite50 --run-name exp1
+  python scripts/run_mfm_data.py pretrain cite100 --run-name exp1
 ```
 
-Đổi `cite50` thành profile khác ở cửa sổ tiếp theo. Mỗi tiến trình chuẩn bị dữ
-liệu dưới khóa chung, rồi kiểm tra `nvidia-smi` mỗi 20 giây. Khi có GPU được
+Mỗi tiến trình kiểm tra `nvidia-smi` mỗi 20 giây. Khi có GPU được
 phép với ít nhất 8 GiB trống, tiến trình giữ khóa GPU đó trong suốt pretrain;
-GPU được ánh xạ thành `cuda:0` cho mô hình. Nếu dùng `both`, khóa cũng được
-giữ qua bước distill của cùng profile.
+GPU được ánh xạ thành `cuda:0` cho mô hình.
 Các tiến trình MFM dùng cùng launcher sẽ không chọn trùng GPU. `--device cuda:0`
 cho phép chọn GPU thủ công nếu cần. `--gpus 0,1`
 giới hạn GPU vật lý và `--min-free-gb 12` đổi ngưỡng bộ nhớ.
 `--dry-run` chỉ in kế hoạch, không kiểm tra GPU hoặc chạy model.
 
-Kết quả:
+Kết quả native CITE/MULTI dùng bố cục checkpoint của MFM gốc dưới thư mục
+`outputs/pretrain/mfm/<profile>/<run-name>/`. Bố cục bên dưới chỉ áp dụng cho
+checkpoint snapshot cũ:
 
 ```text
 outputs/pretrain/mfm/<profile>/<run-name>/

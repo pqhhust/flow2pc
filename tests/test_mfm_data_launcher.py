@@ -20,17 +20,13 @@ def overrides(command):
 
 
 @pytest.mark.parametrize("name", list(launcher.PROFILES))
-def test_every_profile_has_three_configs_and_matching_pair(name):
-    args = launcher.parser().parse_args(["both", name, "--student", "both", "--dry-run"])
+def test_every_profile_retains_distillation_configs(name):
+    args = launcher.parser().parse_args(["distill", name, "--student", "both", "--dry-run"])
     commands = launcher.commands(args, name)
-    assert len(commands) == 3
-    teacher, hclt, gaussian = [yaml.safe_load(Path(c[3]).read_text()) for c in commands]
-    assert teacher["model"]["params"]["backend"] == "snapshots"
-    assert teacher["model"]["params"]["native"]["velocity_metric"] == "land"
-    assert teacher["model"]["params"]["native"]["rho"] > 0
-    assert teacher["data"]["params"]["profile"] == name
-    run = Path(overrides(commands[0])["output.dir"])
-    for command, config in zip(commands[1:], (hclt, gaussian), strict=True):
+    assert len(commands) == 2
+    run = args.output_root / "pretrain/mfm" / name / args.run_name
+    for command in commands:
+        config = yaml.safe_load(Path(command[3]).read_text())
         values = overrides(command)
         assert values["teacher.checkpoint"] == str(run / "checkpoints/flow.pt")
         assert values["teacher.params.geopath_checkpoint"] == str(run / "checkpoints/geopath.pt")
@@ -47,12 +43,62 @@ def test_preview_never_spawns_or_creates_data(tmp_path, monkeypatch):
 
     monkeypatch.setattr(launcher.subprocess, "run", forbidden)
     monkeypatch.setattr(launcher, "link_sources", forbidden)
-    assert launcher.main(["both", "all", "--dry-run", "--data-root", str(tmp_path / "data"),
+    assert launcher.main(["prepare", "all", "--dry-run", "--data-root", str(tmp_path / "data"),
                           "--output-root", str(tmp_path / "outputs")]) == 0
     assert list(tmp_path.iterdir()) == []
 
 
-def test_pretrain_failure_never_starts_distill(monkeypatch):
+def test_pretrain_launcher_generates_a_new_run_name_each_invocation(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(launcher.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    for _ in range(2):
+        assert launcher.main(["pretrain", "cite100", "--device", "cuda:0",
+                              "--output-root", str(tmp_path / "outputs")]) == 0
+    first, second = [overrides(command) for command in calls]
+    assert first["data.root"] == second["data.root"]
+    assert first["output.dir"] != second["output.dir"]
+    assert Path(first["output.dir"]).parent == Path(second["output.dir"]).parent
+    assert Path(first["output.dir"]).is_dir()
+    assert Path(second["output.dir"]).is_dir()
+
+
+@pytest.mark.parametrize("name", launcher.NATIVE_PROFILES)
+def test_native_profiles_use_original_configs_and_flow2pc_raw_data(tmp_path, name):
+    args = launcher.parser().parse_args(["pretrain", name,
+                                          "--run-name", "native-1", "--dry-run",
+                                          "--output-root", str(tmp_path / "outputs")])
+    command, = launcher.commands(args, name)
+    values = overrides(command)
+    config = yaml.safe_load(Path(command[3]).read_text())
+    native_config = config["model"]["params"]["config_path"]
+    assert native_config == f"configs/pretrain/mfm/native/mfm_{name}_source.yaml"
+    settings = yaml.safe_load((ROOT / native_config).read_text())
+    assert settings["dim"] == launcher.PROFILES[name]["dim"]
+    assert settings["t_exclude"] == [1, 2] and settings["mfm"] is True
+    if name.endswith("5"):
+        assert settings["whiten"] is True and settings["velocity_metric"] == "land"
+        assert settings["gammas"] == [0.125, 0.25]
+    else:
+        assert settings["whiten"] is False and settings["velocity_metric"] == "rbf"
+        assert settings["n_centers"] == 150 and settings["metric_epochs"] == 200
+    assert config["data"]["name"] == settings["data_name"]
+    assert "source_root" not in values
+    assert values["data.root"] == str(ROOT / "data/single_cell")
+    assert values["output.dir"] == str(tmp_path / f"outputs/pretrain/mfm/{name}/native-1")
+    assert "wandb.mode" not in values and "training.device" not in values
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_launcher_has_no_backend_switch_or_automatic_native_distillation():
+    with pytest.raises(SystemExit):
+        launcher.parser().parse_args(["pretrain", "cite100", "--backend", "snapshots"])
+    with pytest.raises(SystemExit):
+        launcher.main(["both", "cite100", "--dry-run"])
+    with pytest.raises(SystemExit):
+        launcher.main(["pretrain", "multi50", "--dry-run"])
+
+
+def test_pretrain_failure_never_starts_distill(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(launcher, "link_sources", lambda *args, **kwargs: None)
 
@@ -62,6 +108,7 @@ def test_pretrain_failure_never_starts_distill(monkeypatch):
             raise subprocess.CalledProcessError(9, command)
 
     monkeypatch.setattr(launcher.subprocess, "run", execute)
-    assert launcher.main(["both", "gom"]) == 9
-    assert len(calls) == 2  # One preparation process, then one teacher process.
+    assert launcher.main(["pretrain", "cite100", "--device", "cuda:0",
+                          "--output-root", str(tmp_path / "outputs")]) == 9
+    assert len(calls) == 1
     assert all("configs/distill" not in " ".join(command) for command in calls)

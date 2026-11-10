@@ -1,53 +1,12 @@
-# Snapshot protocol v1; native parameter starting point: ../pretrain/metric-flow-matching/configs/single_cell/50dims/ot-mfm_multi.yaml
-# New adaptations are not claims of published reproduction.
-# Upstream RBF metric parameters for the corresponding dataset and dimension.
 stage: pretrain
 seed: 42
 model:
   name: mfm
   params:
-    backend: snapshots
-    native:
-      hidden_dims_geopath:
-      - 1024
-      - 1024
-      - 1024
-      hidden_dims_flow:
-      - 1024
-      - 1024
-      - 1024
-      activation_geopath: selu
-      activation_flow: selu
-      time_geopath: true
-      sigma: 0.1
-      optimal_transport_method: exact
-      velocity_metric: rbf
-      gamma_current: 0.2
-      n_centers: 150
-      kappa: 1.5
-      metric_epochs: 200
-      rho: -2.75
-      alpha_metric: 1.0
-      geopath_optimizer: adam
-      geopath_lr: 0.0001
-      geopath_weight_decay: 1.0e-05
-      flow_optimizer: adamw
-      flow_lr: 0.001
-      flow_weight_decay: 1.0e-05
+    config_path: configs/pretrain/mfm/native/mfm_multi50_source.yaml
 data:
-  name: mfm_snapshots
-  root: data/multi50/seed42
-  params:
-    profile: multi50
-training:
-  epochs: 1000
-  batch_size: 128
-  device: cuda:0
-  patience_geopath: 5
-  patience_flow: 25
-  validate_every: 1
+  name: multi
+  root: data/single_cell
+training: {}
 output:
   dir: outputs/pretrain/mfm/multi50/default
-wandb:
-  project: flow2pc
-  mode: online
