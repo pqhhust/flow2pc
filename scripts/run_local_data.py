@@ -71,12 +71,8 @@ def build_commands(args):
         raise ValueError("--teacher-checkpoint applies only to distill")
     if args.validate_only and args.stage == "both":
         raise ValueError("Validate stages separately: distill requires a trained teacher")
-    if args.stage != "pretrain":
-        if args.method == "otpfm":
-            raise ValueError(
-                "OTP-FM distillation is not integrated: its conditional tuple sampler "
-                "cannot be replaced by the ALI-CFM endpoint interpolant."
-            )
+    if args.stage != "pretrain" and args.method == "otpfm" and args.recipe in ("kl", "mmd"):
+        raise ValueError("Recovered OTP distillation supports W2/W2Inf direct paths; nonlinear KL/MMD sampling is not integrated")
 
     data_root = args.data_root.expanduser().resolve()
     run = args.output_root.expanduser().resolve() / args.method / args.dataset
@@ -85,7 +81,8 @@ def build_commands(args):
     run /= args.run_name
     checkpoint = (
         args.teacher_checkpoint.expanduser().resolve() if args.teacher_checkpoint
-        else run / "pretrain/checkpoints/last.pt"
+        else run / ("pretrain/checkpoints/best.pt" if args.method == "otpfm"
+                    and args.dataset in TRANSPORT_DATASETS else "pretrain/checkpoints/last.pt")
     )
     stages = ("pretrain", "distill") if args.stage == "both" else (args.stage,)
     commands = []
@@ -94,8 +91,9 @@ def build_commands(args):
             suffix = "_hclt" if stage == "distill" else ""
             config = REPO_ROOT / "configs" / stage / "alicfm" / f"alicfm_{args.dataset}{suffix}.yaml"
         else:
-            suffix = f"_{args.recipe}" if args.dataset in TRANSPORT_DATASETS else ""
-            config = REPO_ROOT / "configs/pretrain/otpfm" / f"otpfm_{args.dataset}{suffix}.yaml"
+            recipe = f"_{args.recipe}" if args.dataset in TRANSPORT_DATASETS else ""
+            suffix = "_hclt" if stage == "distill" else ""
+            config = REPO_ROOT / "configs" / stage / "otpfm" / f"otpfm_{args.dataset}{recipe}{suffix}.yaml"
         if not config.is_file():
             raise ValueError(f"Missing recipe: {config}")
         command = [args.python, str(REPO_ROOT / "main.py"), "--config", str(config)]

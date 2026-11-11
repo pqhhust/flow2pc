@@ -28,7 +28,7 @@ def test_runnable_configs_use_method_folders_and_explicit_student_names():
 
 def test_selected_presets_match_recorded_scientific_settings():
     index = json.loads((ROOT / "docs/selected_teachers.json").read_text())
-    assert len(index["teachers"]) == 12
+    assert len(index["teachers"]) == 18
     for selected in index["teachers"]:
         config = yaml.safe_load((ROOT / selected["pretrain_config"]).read_text())
         assert config["model"]["name"] == selected["method"]
@@ -46,10 +46,24 @@ def test_selected_presets_match_recorded_scientific_settings():
 def test_transport_students_load_selected_teachers_and_use_temporal_validation():
     index = json.loads((ROOT / "docs/selected_teachers.json").read_text())
     for selected in index["teachers"]:
-        if selected["method"] != "alicfm":
+        if selected["method"] != "alicfm" or selected["dataset"] not in ("gom", "beijing"):
             continue
         config = yaml.safe_load((ROOT / selected["distill_config"]).read_text())
         assert config["teacher"]["checkpoint"] == selected["checkpoint"]
         assert config["student"]["name"] == "hclt"
         assert config["distillation"]["validation_scope"] == "heldout_times"
         assert config["distillation"]["sampler"]["name"] == "teacher_interpolant"
+
+
+def test_synthetic_selection_uses_endpoint_validation_and_preserves_test_times():
+    index = json.loads((ROOT / "docs/selected_teachers.json").read_text())
+    synthetic = [r for r in index["teachers"] if r["dataset"] in ("arch", "sphere", "lidar")]
+    assert len(synthetic) == 6
+    for selected in synthetic:
+        assert selected["metric"] == "validation_teacher_mean_emd"
+        expected = [0, 1] if selected["dataset"] == "lidar" else [0, 2]
+        assert selected["validation_time_indices"] == expected
+        assert selected["excluded_test_times"] == ([] if selected["dataset"] == "lidar" else [1])
+        config = yaml.safe_load((ROOT / selected["distill_config"]).read_text())
+        assert config["teacher"]["checkpoint"] == selected["checkpoint"]
+        assert config["distillation"]["validation_scope"] == "observed_rows"

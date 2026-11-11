@@ -156,3 +156,27 @@ bash scripts/run_mfm_teacher_sweep_8gpu.sh --summarize-only
 No training, evaluation, distillation or tests were executed during implementation.
 The metadata-only preview, syntax checks, and input-hash inspection are separate
 from runtime verification. Regression cases are in `tests/test_mfm_teacher_sweep.py`.
+
+## Selected completed teachers
+
+The saved sweep ended with 548 complete, 928 failed and 60 blocked runs out of
+1,536 planned. The best completed teacher per method/dataset was selected by
+reserved endpoint-row validation W1, never by Arch/Sphere's middle-time test.
+Winning scientific settings are now in the six standalone pretrain presets.
+The matching HCLT distill configs point directly to those existing checkpoints:
+
+```text
+configs/pretrain/alicfm/alicfm_{arch,sphere,lidar}.yaml
+configs/pretrain/otpfm/otpfm_{arch,sphere,lidar}.yaml
+configs/distill/alicfm/alicfm_{arch,sphere,lidar}_hclt.yaml
+configs/distill/otpfm/otpfm_{arch,sphere,lidar}_hclt.yaml
+```
+
+[The selection report](SELECTED_TEACHERS.md) records validation and test scores,
+successful-run counts, checkpoint paths and hashes. Pretrain presets create new
+runs with the winning settings; distill presets consume the saved winning models.
+No geometry constraint, model objective or student training recipe was changed.
+
+The existing OTP parallel launcher accepts `--datasets arch sphere lidar`
+explicitly; these are not added to its default real-data batch. The ALI wrapper
+also accepts these datasets, for example `bash scripts/run_alicfm.sh distill arch`.

@@ -150,12 +150,16 @@ def resolve_config(raw, *, base):
         teacher = mapping(
             config["teacher"],
             "teacher",
-            {"checkpoint", "format", "legacy_metadata", "generator_checkpoint"},
+            {"name", "checkpoint", "format", "legacy_metadata", "generator_checkpoint", "data_root"},
             {"checkpoint"},
         )
         teacher["checkpoint"] = resolve_path(
             teacher["checkpoint"], base, "teacher.checkpoint"
         )
+        if "data_root" in teacher:
+            teacher["data_root"] = resolve_path(teacher["data_root"], base, "teacher.data_root")
+        if "name" in teacher and teacher["name"] not in ("alicfm", "otpfm"):
+            raise ValueError("Use the method-specific schema for this teacher")
         teacher_format = teacher.setdefault(
             "format", "legacy" if "legacy_metadata" in teacher else "framework"
         )
@@ -165,6 +169,8 @@ def resolve_config(raw, *, base):
             raise ValueError(
                 "Existing checkpoints require their explicit legacy_metadata contract"
             )
+        if teacher.get("name") == "otpfm" and teacher_format != "framework":
+            raise ValueError("OTP distillation requires a migrated framework checkpoint with saved native configuration")
         if teacher_format == "framework" and (
             "legacy_metadata" in teacher or "generator_checkpoint" in teacher
         ):
@@ -205,6 +211,8 @@ def resolve_config(raw, *, base):
             raise ValueError("sampler.name must be a nonempty string")
         if not isinstance(d["sampler"].setdefault("params", {}), dict):
             raise ValueError("sampler.params must be a mapping")
+        if teacher.get("name") == "otpfm" and d["sampler"]["name"] != "otpfm_conditional":
+            raise ValueError("OTP-FM requires sampler.name: otpfm_conditional")
         from math import isfinite
 
         from flow2pc.utils.experiment_protocols import validation_scope

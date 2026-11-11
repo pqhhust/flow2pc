@@ -58,7 +58,7 @@ class FrozenOTPFM(nn.Module):
         return self.model.sample(x0, n_steps=n_steps, ema=True)
 
     def interpolate(self, *args, **kwargs):
-        raise NotImplementedError("OTP-FM conditional interpolation requires all observed tuple members; the PC sampler is a separate integration, not an ALI endpoint generator")
+        raise NotImplementedError("OTP-FM interpolation requires all observed tuple members; use the otpfm_conditional distillation sampler instead of the ALI endpoint interface")
 
 
 def load(checkpoint, device="cpu"):

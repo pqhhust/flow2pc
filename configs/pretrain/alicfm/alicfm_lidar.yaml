@@ -1,17 +1,20 @@
-# Saved MFM splits: endpoint-only adaptation; no interior observations are invented.
+# Two-observation baseline; no interior observations or geometry constraints added.
+# Best completed synthetic sweep run: lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b
+# Endpoint validation W1: 0.03756230451871961; 87/256 completed.
+# Selected existing checkpoint: docs/selected_teachers.json
 stage: pretrain
 seed: 42
 model:
   name: alicfm
   params:
     profile: single_cell
-    cfm_dim: 128
-    interpolant_dim: 128
-    disc_dim: 128
+    cfm_dim: 512
+    interpolant_dim: 512
+    disc_dim: 512
     t_smooth: 0.0
-    pretain_ot: border
-    interpolant_ot: border
-    cfm_ot: border
+    pretain_ot: none
+    interpolant_ot: none
+    cfm_ot: none
     correct_coeff: 1.0
     reg_metric: l2
     land_gamma: 2.0e-08
@@ -24,36 +27,36 @@ model:
     r3gan_gamma: 1.0
 data:
   name: lidar
-  root: ${FLOW2PC_MFM_DATA_ROOT}/prepared/lidar/seed42
+  root: /data/pqhung_group/pdtung/flow2pc/data/mfm/prepared/lidar/seed42
   params: {}
 training:
   protocol: endpoints
   device: cuda:0
-  batch_size: 128
+  batch_size: 512
   num_ali_pretrain_steps: 0
   pretrain_lr: 0.001
   num_ali_train_steps: 10000
   interpolant_gen_lr: 0.0001
   interpolant_disc_lr: 0.0001
   num_cfm_train_steps: 30000
-  cfm_lr: 0.001
+  cfm_lr: 0.0003
   scalar_log_every: 100
 logging:
   mode: online
   project: flow2pc
-  name: lidar-alicfm-endpoints-base-s42
+  name: lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b-best-config
 output:
-  dir: ${FLOW2PC_OUTPUT_ROOT}/mfm-teachers/alicfm/lidar/base-s42
+  dir: /data/lthung/flow2pc/pretrain/alicfm/lidar/best-config-seed42
 evaluation:
   enabled: true
   num_samples: 512
   metric_samples: 512
-  batch_size: 128
   seed: 2026
-  solver: dopri5
+  batch_size: 128
   tolerance: 1.0e-05
-  ode_steps: 100
   max_nfe: 20000
+  solver: dopri5
+  ode_steps: 100
   metric_space: historical
   source_split: all
   reference_split: all

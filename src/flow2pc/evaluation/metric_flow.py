@@ -81,6 +81,19 @@ def _rollout(velocity, initial, times, settings):
     return torch.cat(paths, dim=1)
 
 
+def _teacher_ode_field(teacher):
+    """Use the adapter's ODE interface for adaptive internal-stage queries.
+
+    Training-time velocity(x,t) remains strict about global time. An adaptive
+    solver can evaluate internal stages beyond its requested output interval;
+    ALI/OTP already expose ode_velocity(t,x) to evaluate that same field there.
+    """
+    ode_velocity = getattr(teacher, "ode_velocity", None)
+    if ode_velocity is None:
+        return teacher.velocity
+    return lambda x, t: ode_velocity(t, x)
+
+
 def _direct_samples(student, count, time, settings):
     batch_size = int(settings.get("batch_size", 128))
     return torch.cat([
@@ -209,7 +222,7 @@ def evaluate(student, teacher, data, settings, device, output_dir=None):
             times = data.times.to(initial)
             arrays["times"] = times.cpu().numpy()
             paths = {}
-            modes = [("teacher_ode", teacher.velocity)]
+            modes = [("teacher_ode", _teacher_ode_field(teacher))]
             if student is not None:
                 modes.append(("student_ode", student.velocity))
             for name, velocity in modes:

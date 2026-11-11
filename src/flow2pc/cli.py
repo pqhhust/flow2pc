@@ -111,7 +111,7 @@ def main(argv=None):
                         {
                             "config": config,
                             "dataset": dataset.contract(),
-                            "sampler": sampler,
+                            "sampler": sampler if isinstance(sampler, str) else sampler.contract,
                             "teacher_frozen": not any(
                                 p.requires_grad for p in teacher.parameters()
                             ),

@@ -1,6 +1,7 @@
 """Prepared-data and teacher-sweep contracts. Run only with user authorization."""
 
 import copy
+import hashlib
 import importlib.util
 import json
 import sys
@@ -13,7 +14,7 @@ import torch
 import yaml
 
 from flow2pc.data import mfm_snapshots
-from flow2pc.data.restore import restore_dataset
+from flow2pc.data.restore import resolve_data_root, restore_dataset
 from flow2pc.data.synthetic.prepared_mfm import PreparedMFMMarginals
 from flow2pc.pretrain.models.alicfm.trainer import ALICFM
 from flow2pc.pretrain.models.otpfm.marginals import validate as validate_otp
@@ -90,6 +91,35 @@ def test_shared_loader_preserves_coordinates_splits_geometry_and_reload(tmp_path
         torch.testing.assert_close(torch.cat(dataset.metric_clouds), torch.from_numpy(np.concatenate(geometry)))
         # Saved coordinates must not be whitened a second time.
         torch.testing.assert_close(dataset.clouds[0], torch.from_numpy(clouds[0]))
+
+    contract = dataset.contract()
+    relocated = tmp_path / "relocated" / name / "seed42"
+    relocated.parent.mkdir(parents=True)
+    prepared.rename(relocated)
+    with pytest.raises(FileNotFoundError):
+        restore_dataset(contract, dataset.preprocessing)
+    moved = restore_dataset(contract, dataset.preprocessing, data_root=relocated)
+    assert moved.contract() == {**contract, "root": str(relocated)}
+    assert contract["root"] == str(prepared)
+    for actual, expected in zip(moved.clouds, dataset.clouds, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    changed = relocated / "0_values.npy"
+    changed.write_bytes(b"changed array")
+    with pytest.raises(ValueError, match="array changed"):
+        restore_dataset(contract, dataset.preprocessing, data_root=relocated)
+    # Updating a replacement snapshot's own checksums must not allow it to
+    # impersonate the original teacher-bound snapshot identity.
+    manifest = json.loads((relocated / "manifest.json").read_text())
+    manifest["arrays"][changed.name] = hashlib.sha256(changed.read_bytes()).hexdigest()
+    manifest["identity"] = mfm_snapshots.digest({k: v for k, v in manifest.items() if k != "identity"})
+    (relocated / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="identity differs"):
+        resolve_data_root(contract, relocated)
+
+
+def test_prepared_relocation_does_not_override_other_dataset_contracts(tmp_path):
+    with pytest.raises(ValueError, match="only for prepared"):
+        resolve_data_root({"name": "knot", "root": str(tmp_path)}, tmp_path / "other")
 
 
 @pytest.mark.parametrize("consistency", ["meanflow", "imf"])

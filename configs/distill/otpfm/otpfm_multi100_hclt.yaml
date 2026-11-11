@@ -1,0 +1,48 @@
+# Frozen selected OTP teacher; existing HCLT training and velocity MSE only.
+# OTP conditional tuple sampling; original coupling/alpha come from the checkpoint.
+stage: distill
+seed: 0
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/otp-fm/ali-data-sweep-100/multi100/multi100-c021-h256-l4-lr0.0003-b64-w10-tau1-gaussian-meanflow-s42-3c54a98404e6/checkpoints/last.pt
+student:
+  name: hclt
+  params:
+    num_latents: 128
+    time_embedding_dim: 32
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: otpfm_conditional
+    params: {}
+  device: cuda:0
+  steps: 20000
+  batch_size: 64
+  lr: 0.001
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  validation_scope: dataset
+logging:
+  mode: online
+  project: flow2pc
+  name: multi100-otpfm-hclt-h128-f32-lr0.001-b64-s0
+output:
+  dir: /data/lthung/flow2pc/distill/otpfm/multi100/hclt-teacher-s0
+evaluation:
+  enabled: true
+  num_samples: 2048
+  metric_samples: 2048
+  seed: 2026
+  batch_size: 64
+  tolerance: 1.0e-05
+  max_nfe: 50000
+  solver: dopri5
+  ode_steps: 100
+  metric_space: historical
+  source_split: all
+  reference_split: all
+  protocol: shared_ode

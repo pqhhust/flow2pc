@@ -87,7 +87,11 @@ class LocalLogger:
                         self.offline = True
                         try:
                             self.run = wandb.init(**fallback, id=metadata["id"], config=config, dir=str(directory), **init_options)
-                        except (wandb.errors.CommError, TimeoutError, ConnectionError) as offline_error:
+                        except Exception as offline_error:
+                            # A timed-out online init may leave the SDK run ID
+                            # busy, raising ServerResponseError on offline init.
+                            # This is logging-only: retain local metrics/artifacts
+                            # instead of aborting a valid training worker.
                             self.tracking_failed("offline startup", offline_error)
                 self._finish_run = self.run
                 if self.resilient and self.run is not None:

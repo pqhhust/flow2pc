@@ -110,7 +110,7 @@ class OTPFMMethod:
                 "velocity_contract": "frozen EMA v_func_ema(x, t, t); normalized state and global model time",
                 "native_sampling_contract": "EMA finite-interval model.sample; not diagonal ODE evaluation",
                 "distillation_sampler": "otpfm_conditional",
-                "distillation_integration": "Native conditional-tuple PC sampler is not yet integrated; no ALI generator fallback",
+                "distillation_integration": "otpfm_conditional sampler supports direct W2Inf paths; nonlinear KL/MMD path integration remains unsupported",
             }
             checkpoint = save_teacher(run_dir, {"model_state_dict": observer.best_state}, manifest, dataset.preprocessing, checkpoint_name="best")
             result = write_results(trainer, dataset, native, run_dir, observer.best, logger=logger)

@@ -1,6 +1,7 @@
 """Recovered evaluation behavior. These definitions require explicit test execution."""
 
 import numpy as np
+import pytest
 import torch
 from torch import nn
 
@@ -95,7 +96,10 @@ def test_st_evaluation_saves_clean_he_comparison_and_teacher_reference(tmp_path)
         assert (tmp_path / "student/eval" / name).is_file()
 
 
-def test_whitened_single_cell_figure_accepts_empty_heldout_splits(tmp_path):
+@pytest.mark.parametrize("metric_space", ("historical", "raw"))
+def test_whitened_single_cell_evaluation_accepts_empty_heldout_splits(
+    tmp_path, metric_space
+):
     import h5py
 
     from flow2pc.data.real.single_cell import SingleCell
@@ -120,6 +124,24 @@ def test_whitened_single_cell_figure_accepts_empty_heldout_splits(tmp_path):
         for index in range(4)
     ])
     files = save_figures(
-        dataset, paths, None, tmp_path, {"metric_space": "historical"}
+        dataset, paths, None, tmp_path, {"metric_space": metric_space}
     )
     assert files["teacher_marginals"].is_file()
+
+    # A student comparison also inverts full [time, cells, features] paths for
+    # paired raw-coordinate errors. Teacher-only figures use 2D slices instead.
+    output = tmp_path / "student_eval"
+    settings = resolve_evaluation({
+        "enabled": True, "solver": "rk4", "num_samples": 8,
+        "metric_samples": 8, "batch_size": 4, "ode_steps": 4,
+        "metric_space": metric_space,
+    })
+    result = evaluate(
+        ConstantField(), dataset, settings, output,
+        student=ConstantField(), checkpoint_step=7,
+    )
+    assert result["teacher_student_max_paired_rmse_raw"] == 0
+    assert result["student_mean_emd"] == result["teacher_mean_emd"]
+    assert result["checkpoint_step"] == 7
+    for filename in ("metrics.json", "media.json", "comparison_marginals.png"):
+        assert (output / filename).is_file()

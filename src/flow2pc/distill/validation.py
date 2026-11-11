@@ -95,19 +95,24 @@ def prepare_validation(teacher, dataset, pools, settings, seed, sampler):
     groups = {}
     temporal = temporal_validation_contract(dataset, settings)
     required = {0, len(pools) - 1}
-    if sampler in ("mmot_middle", "chain_ot"):
+    if not isinstance(sampler, str):
+        required.update(sampler.required_indices)
+    elif sampler in ("mmot_middle", "chain_ot"):
         required.update(dataset.observed)
     if all(len(pools[i]) for i in required):
         # Retain the existing observed-time row-validation diagnostic.
         batches = [
-            sample_ali_batch(
+            (sample_ali_batch(
                 teacher,
                 dataset,
                 pools,
                 settings.get("validation_batch_size", 128),
                 rng,
                 sampler,
-            )
+            ) if isinstance(sampler, str) else sampler.sample_batch(
+                pools, settings.get("validation_batch_size", 128), rng,
+                validation=True,
+            ))
             for _ in range(settings.get("validation_batches", 4))
         ]
         values = torch.cat([b.x_t for b in batches])

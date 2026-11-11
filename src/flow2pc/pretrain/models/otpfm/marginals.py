@@ -200,10 +200,12 @@ def fit(dataset, config, run_dir):
             "training_config": {**config["training"], "actual_updates": trainer.global_step},
             "dataset": dataset.contract(), "seed": config["seed"], "source_provenance": source,
             "velocity_contract": "frozen EMA v_func_ema(x,t,t); dx/dmodel_time in saved model coordinates",
-            "selected_checkpoint": {"rule": "final_epoch", "epoch": native["epochs"], "global_step": trainer.global_step},
+            "selected_checkpoint": {"rule": "final_epoch", "epoch": native["epochs"],
+                                    "global_step": trainer.global_step,
+                                    "sampling_alpha": float(trainer.losses["otp_alpha"][-1][1])},
             "evaluation_protocol": "shared_ode", "sampling_contract": sampling,
             "distillation_sampler": "otpfm_conditional",
-            "distillation_integration": "Native conditional-tuple PC sampling is not yet integrated",
+            "distillation_integration": "otpfm_conditional sampler; direct W2Inf conditional queries with diagonal EMA targets",
         }
         checkpoint = save_teacher(run_dir, {"model_state_dict": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}}, manifest, dataset.preprocessing)
         # Training is finished before freezing; never freeze the live model

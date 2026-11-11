@@ -1,7 +1,11 @@
 # Flow2PC
 
 Flow2PC distills frozen flow-matching velocity fields into time-dependent
-probabilistic circuits. ALI-CFM and MFM use teacher-velocity MSE.
+probabilistic circuits. ALI-CFM, OTP-FM, MFM and MMFM use teacher-velocity MSE.
+
+OTP-FM's successful historical conditional sampler is restored in the shared
+distillation runner, using the existing HCLT student and training recipe.
+See [OTP distillation, selected-teacher configs and commands](docs/OTPFM_DISTILLATION.md).
 
 ## Retained code
 

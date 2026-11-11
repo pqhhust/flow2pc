@@ -1,4 +1,7 @@
-# Saved MFM splits: endpoint-only adaptation; no interior observations are invented.
+# Two-observation baseline; no interior observations or geometry constraints added.
+# Best completed synthetic sweep run: lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea
+# Endpoint validation W1: 0.03430003454376726; 86/256 completed.
+# Selected existing checkpoint: docs/selected_teachers.json
 stage: pretrain
 seed: 42
 model:
@@ -24,18 +27,18 @@ model:
       dropout: 0.0
       weight_decay: 0.0
       grad_clip: 0.0
-      hidden_dim: 256
-      num_hidden_layers: 4
-      lr: 0.001
-      batch_size: 128
+      hidden_dim: 512
+      num_hidden_layers: 8
+      lr: 0.0003
+      batch_size: 256
       strength: 100.0
       width_multiplier: 1.0
       lambda_type: gaussian
-      consistency_loss: imf
+      consistency_loss: meanflow
       otp_alpha_mean_scale: 1.0
 data:
   name: lidar
-  root: ${FLOW2PC_MFM_DATA_ROOT}/prepared/lidar/seed42
+  root: /data/pqhung_group/pdtung/flow2pc/data/mfm/prepared/lidar/seed42
   params: {}
 training:
   device: cuda:0
@@ -44,9 +47,9 @@ training:
 logging:
   mode: online
   project: flow2pc
-  name: lidar-otpfm-endpoints-base-s42
+  name: lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea-best-config
 output:
-  dir: ${FLOW2PC_OUTPUT_ROOT}/mfm-teachers/otpfm/lidar/base-s42
+  dir: /data/lthung/flow2pc/pretrain/otpfm/lidar/best-config-seed42
 evaluation:
   enabled: true
   num_samples: 512

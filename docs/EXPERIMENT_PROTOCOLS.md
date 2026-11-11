@@ -112,6 +112,12 @@ when W&B is available.
 
 ## Coupling and external source checkouts
 
+OTP-FM queries use its saved conditional tuple construction and coupling, with
+the selected checkpoint's fixed correction alpha and diagonal EMA velocity
+targets. The direct W2Inf cache was recovered from the successful historical
+integration; it adds no student training stage or loss. See
+[OTP distillation](OTPFM_DISTILLATION.md). Dataset validation policy stays as above.
+
 ALI queries use the frozen generator and recover coupling from the checkpoint's
 **CFM training settings**, ahead of old profile-only sampler tags:
 

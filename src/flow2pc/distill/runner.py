@@ -1,4 +1,4 @@
-"""Frozen-teacher distillation runners for ALI-CFM and MFM."""
+"""Frozen-teacher queries with shared student velocity-MSE training."""
 
 import csv
 import json
@@ -14,7 +14,7 @@ import yaml
 from flow2pc.data.metric_registry import load_dataset
 from flow2pc.data.restore import restore_dataset
 from flow2pc.pretrain.models.alicfm.query_policy import resolve_sampler
-from flow2pc.distill.sampling import sample_ali_batch, sample_mfm_batch, sample_mmfm_batch, velocity_mse
+from flow2pc.distill.sampling import sample_batch, sample_mfm_batch, sample_mmfm_batch, velocity_mse
 from flow2pc.distill.student import (
     build_optimizer,
     build_student,
@@ -50,8 +50,23 @@ def prepare(config):
         legacy_metadata=source.get("legacy_metadata"),
         generator_checkpoint=source.get("generator_checkpoint"),
     )
-    dataset = restore_dataset(teacher.manifest["dataset"], teacher.preprocessing)
-    saved_sampler = resolve_sampler(teacher.manifest, settings["sampler"])
+    dataset = restore_dataset(
+        teacher.manifest["dataset"], teacher.preprocessing,
+        data_root=source.get("data_root"),
+    )
+    method = teacher.manifest["method"]
+    if source.get("name", method) != method:
+        raise ValueError("Configured teacher name differs from the checkpoint method")
+    if method == "otpfm":
+        from flow2pc.distill.otpfm_sampling import OTPFMConditionalSampler
+
+        saved_sampler = OTPFMConditionalSampler(
+            teacher, dataset, settings["sampler"], source["checkpoint"]
+        )
+    elif method == "alicfm":
+        saved_sampler = resolve_sampler(teacher.manifest, settings["sampler"])
+    else:
+        raise ValueError(f"Use the method-specific config for {method} distillation")
     return teacher, dataset, saved_sampler
 
 
@@ -99,7 +114,7 @@ def _run_ali(config):
         "student": config["student"],
         "seed": config["seed"],
         "settings": {k: v for k, v in cfg.items() if k not in ("resume", "device")},
-        "sampler": sampler,
+        "sampler": sampler if isinstance(sampler, str) else sampler.contract,
         "objective": "teacher_velocity_MSE_only",
         "clamp_scale_derivative": clamp_derivative,
     }
@@ -114,6 +129,10 @@ def _run_ali(config):
         if last_path.exists()
         else None
     )
+    execution_metadata = (
+        {"sampler_execution_sha256": sampler.contract["implementation_sha256"]}
+        if teacher.manifest["method"] == "otpfm" else {}
+    )
     if previous is not None:
         if previous["binding"].get("validation_protocol") != temporal_validation:
             raise ValueError(
@@ -121,7 +140,15 @@ def _run_ali(config):
                 "rather than comparing scores from different validation protocols"
             )
         if previous["binding"] != binding:
-            raise ValueError("Resume teacher/data/model/training binding changed")
+            from flow2pc.distill.otpfm_compat import compatible_binding
+
+            if (teacher.manifest["method"] != "otpfm"
+                    or not compatible_binding(previous["binding"], binding)):
+                raise ValueError("Resume teacher/data/model/training binding changed")
+            # Preserve the original identity and its best.pt selection history.
+            # Record the current execution source separately, without rewriting
+            # old checkpoints or accepting changed data, alpha, coupling or loss.
+            binding = previous["binding"]
         if previous.get("best_step") is not None:
             selected_path = output / "checkpoints/best.pt"
             if not selected_path.is_file():
@@ -185,6 +212,7 @@ def _run_ali(config):
             "schema_version": 1,
             "artifact_type": "student",
             **binding,
+            **execution_metadata,
             "model_config": model_config,
             "binding_sha256": identity(binding),
         },
@@ -200,6 +228,7 @@ def _run_ali(config):
                     k: v.detach().cpu() for k, v in student.state_dict().items()
                 },
                 "binding": binding,
+                **execution_metadata,
                 "model_config": model_config,
                 "step": step,
                 "optimizer": optimizer.state_dict(),
@@ -218,7 +247,7 @@ def _run_ali(config):
             save(last_path, checkpoint(0))
         for step in range(start, cfg["steps"] + 1):
             student.train()
-            batch = sample_ali_batch(
+            batch = sample_batch(
                 teacher, dataset, pools, cfg["batch_size"], rng, sampler
             )
             optimizer.zero_grad(set_to_none=True)

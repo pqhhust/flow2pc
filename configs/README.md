@@ -11,6 +11,7 @@ configs/
     mmfm/mmfm_<dataset>.yaml
   distill/
     alicfm/alicfm_<dataset>_hclt.yaml
+    otpfm/otpfm_<dataset>_hclt.yaml
     mfm/mfm_<dataset>_{hclt,gaussian}.yaml
     mmfm/mmfm_<dataset>_{hclt,gaussian}.yaml
   evaluate/
@@ -36,9 +37,10 @@ training loops remain method-specific. Existing launchers resolve these paths.
 
 ## Selected sweep teachers
 
-The ALI-CFM GOM/Beijing presets and ten OTP-FM single-cell/knot/ST/tracking
-presets contain the exact scientific settings from the best completed sweep
-runs. [Selected teacher results](../docs/SELECTED_TEACHERS.md) lists their scores;
+The ALI-CFM GOM/Beijing presets, ten OTP-FM single-cell/knot/ST/tracking presets,
+and six ALI/OTP Arch/Sphere/LiDAR presets contain the exact scientific settings
+from the best completed sweep runs.
+[Selected teacher results](../docs/SELECTED_TEACHERS.md) lists their scores;
 [the index](../docs/selected_teachers.json) records original checkpoints, hashes,
 resolved configurations and ranking scope.
 
@@ -53,10 +55,15 @@ PYTHONPATH=src python main.py --config configs/distill/alicfm/alicfm_gom_hclt.ya
 
 These are commands for the user to execute. Data and outputs remain external;
 override `data.root`, `output.dir` or `teacher.checkpoint` through `--set` as needed.
+The synthetic HCLT distill presets also directly reference the selected existing
+checkpoints, for example `distill/alicfm/alicfm_arch_hclt.yaml` and
+`distill/otpfm/otpfm_sphere_hclt.yaml`. Reserved endpoint rows select students;
+Arch/Sphere middle populations remain test data.
+
 The selected teacher presets log to W&B project `flow2pc` and retain final
 evaluation/figures. Existing trained checkpoints and sweep outputs are preserved.
 
-OTP-FM teacher pretraining/evaluation is integrated. Its conditional-tuple student
-sampler is not implemented in the current organized distillation runner, so no
-OTP-FM distillation preset is advertised as runnable. Adding that sampler is a
-separate implementation task; ALI's generator sampler is not a valid substitute.
+OTP-FM distillation uses the restored `otpfm_conditional` sampler and the existing
+HCLT student/velocity-MSE training. Presets load the ten selected shared-data
+teachers; transport W2/W2Inf presets also load migrated reference teachers.
+See [the recovered sampler and its supported protocols](../docs/OTPFM_DISTILLATION.md).

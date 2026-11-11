@@ -57,7 +57,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/cell_tracking/cell_tracking-c021-h256-l4-lr0.0003-b64-w10-tau1-gaussian-meanflow-s42-94011c035cf7/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_cell_tracking.yaml",
       "selection_scope": "observed-time reconstruction; no temporal holdout",
-      "scientific_config_sha256": "3a2c6e2b382e2d014c0ed2f89ed9c6bc0f6fc6fd2dc5610937fb345c2fb61be4"
+      "scientific_config_sha256": "3a2c6e2b382e2d014c0ed2f89ed9c6bc0f6fc6fd2dc5610937fb345c2fb61be4",
+      "distill_config": "configs/distill/otpfm/otpfm_cell_tracking_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -75,7 +76,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/cite100/cite100-c003-h512-l6-lr0.001-b256-w1000-tau0.25-gaussian-imf-s42-5970a822a7c5/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_cite100.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "f5f400b39ab47823a69f0d9ccb6b7a7099cc66423f7b53821f87158eb160a5ff"
+      "scientific_config_sha256": "f5f400b39ab47823a69f0d9ccb6b7a7099cc66423f7b53821f87158eb160a5ff",
+      "distill_config": "configs/distill/otpfm/otpfm_cite100_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -93,7 +95,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/cite5/cite5-c003-h512-l6-lr0.001-b256-w1000-tau0.25-gaussian-imf-s42-5d910a9fb852/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_cite5.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "716db542e2e894b6bea3bb6496078a0990f44c748697e91533dc00c798bdcd9a"
+      "scientific_config_sha256": "716db542e2e894b6bea3bb6496078a0990f44c748697e91533dc00c798bdcd9a",
+      "distill_config": "configs/distill/otpfm/otpfm_cite5_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -111,7 +114,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/cite50/cite50-c027-h256-l6-lr0.003-b64-w100-tau1-gaussian-imf-s42-8725c92663dd/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_cite50.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "e0b34e2dcd8342a8f11d01fa55b79b38db2f286979005bfb8df317e6a2769097"
+      "scientific_config_sha256": "e0b34e2dcd8342a8f11d01fa55b79b38db2f286979005bfb8df317e6a2769097",
+      "distill_config": "configs/distill/otpfm/otpfm_cite50_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -129,7 +133,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/eb/eb-c002-h512-l6-lr0.001-b64-w1000-tau1-gaussian-imf-s42-558570d4918c/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_eb.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "83568ffee34c049c84d2b2c1396be300be05a65d581d2cf9aedab6c1bf28fb89"
+      "scientific_config_sha256": "83568ffee34c049c84d2b2c1396be300be05a65d581d2cf9aedab6c1bf28fb89",
+      "distill_config": "configs/distill/otpfm/otpfm_eb_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -147,7 +152,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/knot/knot-c013-h256-l4-lr0.003-b128-w1000-tau0.25-box-meanflow-s42-5578002ee073/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_knot.yaml",
       "selection_scope": "observed-time reconstruction; no temporal holdout",
-      "scientific_config_sha256": "cbc44737bc46f10bd0450e6c3b590a6dbe53b4dad016c9d553a7655610c8ba29"
+      "scientific_config_sha256": "cbc44737bc46f10bd0450e6c3b590a6dbe53b4dad016c9d553a7655610c8ba29",
+      "distill_config": "configs/distill/otpfm/otpfm_knot_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -165,7 +171,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/multi100/multi100-c021-h256-l4-lr0.0003-b64-w10-tau1-gaussian-meanflow-s42-3c54a98404e6/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_multi100.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "d6c21ae41c2ffb33068dd0ebc1003bbe060dcd4aaff72a1b7f1773a60de6723e"
+      "scientific_config_sha256": "d6c21ae41c2ffb33068dd0ebc1003bbe060dcd4aaff72a1b7f1773a60de6723e",
+      "distill_config": "configs/distill/otpfm/otpfm_multi100_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -183,7 +190,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/multi5/multi5-c031-h512-l4-lr0.003-b64-w100-tau0.5-box-meanflow-s42-89214b1af470/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_multi5.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "723eb714fc0abee4ce635e030d7d0245aebf0292c36b874f6ca02cb6fe53424d"
+      "scientific_config_sha256": "723eb714fc0abee4ce635e030d7d0245aebf0292c36b874f6ca02cb6fe53424d",
+      "distill_config": "configs/distill/otpfm/otpfm_multi5_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -201,7 +209,8 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/multi50/multi50-c010-h128-l2-lr0.0001-b64-w10-tau1-gaussian-imf-s42-3a2918ce4253/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_multi50.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "2727316863b82baa82bf2be6d3fb06fb58e130a4ae01a602be71bd3deb5d2aac"
+      "scientific_config_sha256": "2727316863b82baa82bf2be6d3fb06fb58e130a4ae01a602be71bd3deb5d2aac",
+      "distill_config": "configs/distill/otpfm/otpfm_multi50_hclt.yaml"
     },
     {
       "method": "otpfm",
@@ -219,7 +228,222 @@
       "media_manifest": "/data/lthung/flow2pc/otp-fm/ali-data-sweep-100/st/st-c002-h512-l6-lr0.001-b64-w1000-tau1-gaussian-imf-s42-e9d0d8a22ec8/eval/media.json",
       "pretrain_config": "configs/pretrain/otpfm/otpfm_st.yaml",
       "selection_scope": "temporal holdouts used for hyperparameter selection",
-      "scientific_config_sha256": "471f95a39d25e1377e1f744ca06e4e06f8cbac4dd164e075da9135a5edb9e3d3"
+      "scientific_config_sha256": "471f95a39d25e1377e1f744ca06e4e06f8cbac4dd164e075da9135a5edb9e3d3",
+      "distill_config": "configs/distill/otpfm/otpfm_st_hclt.yaml"
+    },
+    {
+      "method": "alicfm",
+      "dataset": "arch",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.03343992787937792,
+      "run": "arch-alicfm-c051-h256-glr0.0005-vlr0.003-border-b256-s42-ed13a8f9bf38",
+      "completed_runs": 95,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 95,
+        "blocked": 7,
+        "failed": 154
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/arch/arch-alicfm-c051-h256-glr0.0005-vlr0.003-border-b256-s42-ed13a8f9bf38/checkpoints/last.pt",
+      "checkpoint_sha256": "4770c627b7f3016642a717dce4406cbd9e8fe0a5a91dad3d6a66e0f5e89853b0",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/arch/arch-alicfm-c051-h256-glr0.0005-vlr0.003-border-b256-s42-ed13a8f9bf38/resolved_config.yaml",
+      "resolved_config_sha256": "a9adde518ec1e9f4a5cfa041606a7923088bc551bec431064c7b178228aa7d89",
+      "scientific_config_sha256": "a555707093d7b977822a75703c68d72b14e60929efdecfa475160f5ca3b6ab3d",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/arch/arch-alicfm-c051-h256-glr0.0005-vlr0.003-border-b256-s42-ed13a8f9bf38/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/arch/arch-alicfm-c051-h256-glr0.0005-vlr0.003-border-b256-s42-ed13a8f9bf38/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/alicfm/alicfm_arch.yaml",
+      "distill_config": "configs/distill/alicfm/alicfm_arch_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        2
+      ],
+      "excluded_test_times": [
+        1
+      ],
+      "test_heldout_emd": 0.6315373952951081,
+      "coordinate_space": "historical",
+      "prepared_identity": "961e0e5a4d7919c03cd18380c2cb8a0e47b013e94e7ccf6f316c8626e91ae54b"
+    },
+    {
+      "method": "alicfm",
+      "dataset": "sphere",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.08139142969462473,
+      "run": "sphere-alicfm-c033-h128-glr1e-05-vlr0.001-border-b128-s42-01906136886c",
+      "completed_runs": 95,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 95,
+        "blocked": 7,
+        "failed": 154
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/sphere/sphere-alicfm-c033-h128-glr1e-05-vlr0.001-border-b128-s42-01906136886c/checkpoints/last.pt",
+      "checkpoint_sha256": "64dcd3e0b23f957988eb239930a918298d05bd64c6c21dfaf806be211621a9e0",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/sphere/sphere-alicfm-c033-h128-glr1e-05-vlr0.001-border-b128-s42-01906136886c/resolved_config.yaml",
+      "resolved_config_sha256": "0250c63a420265234ba166789efe1f1384cc7eb4941804b29c788ed8ca4089ad",
+      "scientific_config_sha256": "9c72d3e572b530b48e370217a0cd4d9754035467bb7879b37e53eaa3fe2b2491",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/sphere/sphere-alicfm-c033-h128-glr1e-05-vlr0.001-border-b128-s42-01906136886c/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/sphere/sphere-alicfm-c033-h128-glr1e-05-vlr0.001-border-b128-s42-01906136886c/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/alicfm/alicfm_sphere.yaml",
+      "distill_config": "configs/distill/alicfm/alicfm_sphere_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        2
+      ],
+      "excluded_test_times": [
+        1
+      ],
+      "test_heldout_emd": 0.659762887470089,
+      "coordinate_space": "historical",
+      "prepared_identity": "289ea0b2a66c2b7163029672ae76cf10cdf7b90881bcc4d785ee010a9c68c79f"
+    },
+    {
+      "method": "alicfm",
+      "dataset": "lidar",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.037562304518719614,
+      "run": "lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b",
+      "completed_runs": 87,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 87,
+        "blocked": 14,
+        "failed": 155
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/lidar/lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b/checkpoints/last.pt",
+      "checkpoint_sha256": "14c2911407bd2d8914ef79fed97293f5501bc4a0ed87d99dc974b337175bf183",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/lidar/lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b/resolved_config.yaml",
+      "resolved_config_sha256": "316fa2e044447c3941528e5fb1bd31866bf770526ea34669f5fd4cb1e5ad60ef",
+      "scientific_config_sha256": "2468dfad1e5cbb8020125e31394f9afcce47ab560cd82e7358471374b7222d38",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/lidar/lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/alicfm/lidar/lidar-alicfm-c096-h512-glr0.0001-vlr0.0003-none-b512-s42-326b8a48848b/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/alicfm/alicfm_lidar.yaml",
+      "distill_config": "configs/distill/alicfm/alicfm_lidar_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        1
+      ],
+      "excluded_test_times": [],
+      "test_heldout_emd": null,
+      "coordinate_space": "historical",
+      "prepared_identity": "9e58ae7d91396647a891f649ced250155794cea0072edb36ad9ccd03a3968557"
+    },
+    {
+      "method": "otpfm",
+      "dataset": "arch",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.031110933928113794,
+      "run": "arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8",
+      "completed_runs": 93,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 93,
+        "failed": 155,
+        "blocked": 8
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/arch/arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8/checkpoints/last.pt",
+      "checkpoint_sha256": "b39fdb3c3cca264fcff94766e597b163421ebe14bbbd1e4d99acb86c3363d1b0",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/arch/arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8/resolved_config.yaml",
+      "resolved_config_sha256": "fbf2e3eac0a6fe14dc6e2a0b52a0d36f949616c6b0c98d27ed446bd392481ea3",
+      "scientific_config_sha256": "bde61471ab24fa9c3ba8d3508c15249cdbeaf48c628bbef257ad5590b30c69a7",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/arch/arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/arch/arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/otpfm/otpfm_arch.yaml",
+      "distill_config": "configs/distill/otpfm/otpfm_arch_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        2
+      ],
+      "excluded_test_times": [
+        1
+      ],
+      "test_heldout_emd": 0.6273944920343446,
+      "coordinate_space": "historical",
+      "prepared_identity": "961e0e5a4d7919c03cd18380c2cb8a0e47b013e94e7ccf6f316c8626e91ae54b"
+    },
+    {
+      "method": "otpfm",
+      "dataset": "sphere",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.1498378281335273,
+      "run": "sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219",
+      "completed_runs": 92,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 92,
+        "blocked": 9,
+        "failed": 155
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/sphere/sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219/checkpoints/last.pt",
+      "checkpoint_sha256": "8fe7404fdf2b98a74ec15c869fae76ace6725f51a330c2809dfac30b03fd715e",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/sphere/sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219/resolved_config.yaml",
+      "resolved_config_sha256": "41f7ff9f53e2ffc81b94e717920e7d10883a8bf073a9f5126677a59fc45a1b26",
+      "scientific_config_sha256": "7e7ecf0d111daf62f700ed00ea5d4ca9377c7af9ce59046d7a43872ea921ee91",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/sphere/sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/sphere/sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/otpfm/otpfm_sphere.yaml",
+      "distill_config": "configs/distill/otpfm/otpfm_sphere_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        2
+      ],
+      "excluded_test_times": [
+        1
+      ],
+      "test_heldout_emd": 0.7605340621616618,
+      "coordinate_space": "historical",
+      "prepared_identity": "289ea0b2a66c2b7163029672ae76cf10cdf7b90881bcc4d785ee010a9c68c79f"
+    },
+    {
+      "method": "otpfm",
+      "dataset": "lidar",
+      "selection_date_utc": "2026-11-06",
+      "metric": "validation_teacher_mean_emd",
+      "score": 0.03430003454376726,
+      "run": "lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea",
+      "completed_runs": 86,
+      "planned_runs": 256,
+      "run_status_counts": {
+        "complete": 86,
+        "blocked": 15,
+        "failed": 155
+      },
+      "sweep_summary": "/data/lthung/flow2pc/mfm-teachers/sweep-256/summary.csv",
+      "checkpoint": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/lidar/lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea/checkpoints/last.pt",
+      "checkpoint_sha256": "abf19b88524323e96412a417639c23205535fdba3a70317bcc97b918b78a98bb",
+      "resolved_config": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/lidar/lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea/resolved_config.yaml",
+      "resolved_config_sha256": "92ef3a0d692c3c9295810ae539bb60eaae01d8867d89b3be37296fa460ee1d8d",
+      "scientific_config_sha256": "6d0c94f99cbd6f3b3f2903ba4b5f757a347778945197fca083e2f690e52dfd8d",
+      "media_manifest": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/lidar/lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea/eval/media.json",
+      "geometry_image": "/data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/lidar/lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea/eval/teacher_geometry.png",
+      "pretrain_config": "configs/pretrain/otpfm/otpfm_lidar.yaml",
+      "distill_config": "configs/distill/otpfm/otpfm_lidar_hclt.yaml",
+      "selection_scope": "reserved endpoint-row validation W1; temporal test excluded",
+      "validation_time_indices": [
+        0,
+        1
+      ],
+      "excluded_test_times": [],
+      "test_heldout_emd": null,
+      "coordinate_space": "historical",
+      "prepared_identity": "9e58ae7d91396647a891f649ced250155794cea0072edb36ad9ccd03a3968557"
     }
-  ]
+  ],
+  "last_updated_utc": "2026-11-06",
+  "synthetic_selection_date_utc": "2026-11-06"
 }

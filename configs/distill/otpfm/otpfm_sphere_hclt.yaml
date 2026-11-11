@@ -1,0 +1,49 @@
+# Frozen selected synthetic teacher; existing HCLT training and velocity MSE only.
+# Reserved endpoint rows select the student; middle-time populations remain test data.
+stage: distill
+seed: 0
+teacher:
+  name: otpfm
+  data_root: /data/pqhung_group/pdtung/flow2pc/data/sphere/seed42
+  checkpoint: /data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/sphere/sphere-otpfm-c043-h128-l4-lr0.0001-meanflow-b64-s42-c18fe6cee219/checkpoints/last.pt
+student:
+  name: hclt
+  params:
+    num_latents: 128
+    time_embedding_dim: 32
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: otpfm_conditional
+    params: {}
+  device: cuda:0
+  steps: 20000
+  batch_size: 64
+  lr: 0.001
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  validation_scope: observed_rows
+logging:
+  mode: online
+  project: flow2pc
+  name: sphere-otpfm-hclt-h128-f32-lr0.001-b64-s0
+output:
+  dir: /data/lthung/flow2pc/distill/otpfm/sphere/hclt-best-teacher-seed0
+evaluation:
+  enabled: true
+  num_samples: 512
+  metric_samples: 512
+  seed: 2026
+  batch_size: 128
+  tolerance: 1.0e-05
+  max_nfe: 20000
+  solver: dopri5
+  ode_steps: 100
+  metric_space: historical
+  source_split: all
+  reference_split: all
+  protocol: shared_ode
