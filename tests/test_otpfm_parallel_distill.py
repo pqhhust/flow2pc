@@ -38,6 +38,71 @@ def test_batch_uses_only_distill_presets_and_preserves_training_settings(launche
     assert not list(tmp_path.iterdir())
 
 
+def test_selected_ali_configs_keep_winning_settings_and_declared_teachers(launcher, tmp_path):
+    args = launcher.parser().parse_args([
+        "--method", "alicfm", "--output-root", str(tmp_path), "--dry-run",
+    ])
+    runs = launcher.build_runs(args)
+    features = {"cite5": 64, "cite50": 64, "cite100": 32,
+                "multi5": 64, "multi50": 32, "multi100": 32, "cell_tracking": 32}
+    assert {r.dataset for r in runs} == set(features)
+    assert len({r.output for r in runs}) == 7
+    for run in runs:
+        config = run.config
+        assert config["student"]["params"] == {
+            "num_latents": 256, "time_embedding_dim": features[run.dataset], "time_feature_seed": 0,
+        }
+        assert config["seed"] == 0
+        assert config["distillation"]["steps"] == 50000
+        assert config["distillation"]["batch_size"] == 64
+        assert config["distillation"]["lr"] == .001
+        assert config["distillation"]["sampler"]["name"] == "teacher_interpolant"
+        assert config["logging"]["project"] == "flow2pc"
+        assert config["evaluation"]["enabled"]
+        if run.dataset == "cell_tracking":
+            assert config["teacher"]["format"] == "legacy"
+            assert config["teacher"]["checkpoint"].endswith("ali-cfm/changed_files/ali_cfm_model.pth")
+            assert Path(config["teacher"]["legacy_metadata"]).is_file()
+            assert config["evaluation"]["time_indices"] == [0, 24, 49, 74, 99, 114]
+        else:
+            assert config["teacher"]["checkpoint"] == (
+                f"/data/lthung/flow2pc/pretrained-teachers/alicfm/{run.dataset}/checkpoints/last.pt"
+            )
+    assert not list(tmp_path.iterdir())
+
+
+def test_ali_dry_run_never_starts_workers_or_queries_gpus(launcher, tmp_path, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Preview must not launch workers or query GPUs")
+
+    monkeypatch.setattr(launcher, "teacher_identity", lambda c: ("alicfm", "hash", None, None))
+    monkeypatch.setattr(launcher, "gpu_inventory", forbidden)
+    monkeypatch.setattr(launcher.DistillationQueue, "run", forbidden)
+    output = tmp_path / "preview"
+    assert launcher.main([
+        "--method", "alicfm", "--output-root", str(output), "--dry-run",
+    ]) == 0
+    assert not output.exists()
+
+
+def test_legacy_teacher_preview_checks_pinned_hash_without_loading_weights(launcher, tmp_path):
+    import hashlib
+
+    path = tmp_path / "teacher.pth"
+    path.write_bytes(b"metadata-only-checkpoint-fixture")
+    metadata = tmp_path / "metadata.json"
+    content = {"data": {"root": str(tmp_path)}, "time_input": "global",
+               "velocity_time_units": "model", "checkpoint_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    metadata.write_text(json.dumps(content))
+    config = {"teacher": {"name": "alicfm", "checkpoint": str(path), "legacy_metadata": str(metadata)}}
+    assert launcher.teacher_identity(config) == (
+        "alicfm", content["checkpoint_sha256"], hashlib.sha256(metadata.read_bytes()).hexdigest(), None,
+    )
+    path.write_bytes(b"different-teacher")
+    with pytest.raises(ValueError, match="hash differs"):
+        launcher.teacher_identity(config)
+
+
 @pytest.mark.parametrize("action", ("distill", "evaluate", "restart"))
 def test_saved_checkpoint_retry_never_dispatches_teacher_evaluation(launcher, monkeypatch, action):
     calls = []

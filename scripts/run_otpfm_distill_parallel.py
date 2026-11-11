@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Distill existing OTP teachers in parallel; never pretrain a teacher.
+"""Distill existing OTP/ALI teachers in parallel; never pretrain a teacher.
 
 The controller is Torch-free. --dry-run reads configs/metadata only, performs no
 GPU query, writes no files and starts no training, evaluation or W&B session.
@@ -35,7 +35,10 @@ DEFAULT_DATASETS = (
     "eb", "st", "knot", "cell_tracking",
 )
 DATASETS = (*DEFAULT_DATASETS, "gom_w2", "gom_w2inf", "beijing_w2", "beijing_w2inf",
-            "arch", "sphere", "lidar")
+            "arch", "sphere", "lidar", "gom", "beijing")
+DEFAULT_ALICFM_DATASETS = (
+    "cite5", "cite50", "cite100", "multi5", "multi50", "multi100", "cell_tracking",
+)
 
 
 @dataclass
@@ -69,31 +72,61 @@ def scientific_config(config):
 
 def build_runs(args):
     runs = []
-    for dataset in args.datasets:
-        preset = ROOT / f"configs/distill/otpfm/otpfm_{dataset}_hclt.yaml"
+    method = getattr(args, "method", "otpfm")
+    defaults = DEFAULT_ALICFM_DATASETS if method == "alicfm" else DEFAULT_DATASETS
+    for dataset in args.datasets or defaults:
+        preset = ROOT / f"configs/distill/{method}/{method}_{dataset}_hclt.yaml"
         config = load_config(preset)
-        if config["stage"] != "distill" or config["teacher"].get("name") != "otpfm":
-            raise ValueError(f"Expected an OTP distillation preset: {preset}")
-        if config["distillation"]["sampler"]["name"] != "otpfm_conditional":
-            raise ValueError(f"Expected the restored OTP sampler: {preset}")
+        if config["stage"] != "distill" or config["teacher"].get("name", "alicfm") != method:
+            raise ValueError(f"Expected a {method} distillation preset: {preset}")
+        expected_sampler = "teacher_interpolant" if method == "alicfm" else "otpfm_conditional"
+        if config["distillation"]["sampler"]["name"] != expected_sampler:
+            raise ValueError(f"Expected sampler {expected_sampler}: {preset}")
         output = args.output_root / dataset / Path(config["output"]["dir"]).name
         config["output"]["dir"] = str(output)
         config["distillation"].update(device="cuda:0", resume=True)
         config["logging"].update(project="flow2pc", mode=args.mode)
-        runs.append(Run(dataset, f"otpfm-{dataset}-hclt-s{config['seed']}", config, output))
+        runs.append(Run(dataset, f"{method}-{dataset}-hclt-s{config['seed']}", config, output))
     return runs
+
+
+def teacher_identity(config):
+    """Read/check bindings only, including an explicitly declared legacy ALI model."""
+    source = config["teacher"]
+    path = Path(source["checkpoint"])
+    method = source.get("name", "alicfm")
+    if not path.is_file():
+        raise ValueError(f"Missing frozen teacher checkpoint: {path}")
+    metadata_path = source.get("legacy_metadata")
+    if metadata_path is not None:
+        if method != "alicfm":
+            raise ValueError("Only ALI checkpoints support this explicit legacy metadata")
+        metadata_path = Path(metadata_path)
+        metadata = yaml.safe_load(metadata_path.read_text())
+        if metadata.get("time_input") != "global" or metadata.get("velocity_time_units") != "model":
+            raise ValueError("This legacy batch requires declared global model time")
+        if not Path(metadata["data"]["root"]).is_dir():
+            raise ValueError("Legacy teacher data root is missing")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if metadata.get("checkpoint_sha256") != digest:
+            raise ValueError("Legacy teacher hash differs from its pinned metadata")
+        generator = source.get("generator_checkpoint")
+        generator_digest = hashlib.sha256(Path(generator).read_bytes()).hexdigest() if generator else None
+        return method, digest, hashlib.sha256(metadata_path.read_bytes()).hexdigest(), generator_digest
+    teacher = read_json(path.parents[1] / "manifest.json")
+    if teacher.get("method") != method:
+        raise ValueError(f"Missing/incompatible frozen teacher metadata: {path}")
+    if method == "otpfm":
+        native = teacher["model_config"]["native_config"]
+        if native["potential"] != "w2inf" or native.get("solver_type") not in (None, "direct"):
+            raise ValueError("This batch requires the supported native direct W2Inf sampler")
+    resolve_data_root(teacher["dataset"], source.get("data_root"))
+    return method, teacher["checkpoint_sha256"], None, None
 
 
 def inspect_run(run, retry_incomplete=False):
     try:
-        teacher_path = Path(run.config["teacher"]["checkpoint"])
-        teacher = read_json(teacher_path.parents[1] / "manifest.json")
-        if not teacher_path.is_file() or teacher.get("method") != "otpfm":
-            raise ValueError(f"Missing OTP teacher/checkpoint metadata: {teacher_path}")
-        native = teacher["model_config"]["native_config"]
-        if native["potential"] != "w2inf" or native.get("solver_type") not in (None, "direct"):
-            raise ValueError("This batch requires the supported native direct W2Inf sampler")
-        resolve_data_root(teacher["dataset"], run.config["teacher"].get("data_root"))
+        method, teacher_sha, metadata_sha, generator_sha = teacher_identity(run.config)
         if not run.output.exists():
             run.status, run.action, run.error = "pending", "distill", ""
             return
@@ -114,7 +147,9 @@ def inspect_run(run, retry_incomplete=False):
             run.error = run.error or "Partial directory has no checkpoint; --retry-incomplete preserves it before restarting"
             return
         binding = read_json(run.output / "manifest.json")
-        if binding.get("teacher_sha256") != teacher["checkpoint_sha256"]:
+        if (binding.get("teacher_sha256") != teacher_sha
+                or binding.get("legacy_metadata_sha256") != metadata_sha
+                or binding.get("generator_sha256") != generator_sha):
             raise ValueError("Saved student belongs to another teacher; use a new output root")
         media = read_json(run.output / "eval/media.json")
         selected = run.state.get("best_step")
@@ -131,11 +166,12 @@ def inspect_run(run, retry_incomplete=False):
         if complete:
             run.status, run.error = "complete", ""
             return
-        expected = hashlib.sha256((ROOT / "src/flow2pc/distill/otpfm_sampling.py").read_bytes()).hexdigest()
-        if not compatible_implementation(
-            binding.get("sampler", {}).get("implementation_sha256"), expected
-        ):
-            raise ValueError("Sampler code changed since the saved run; use a fresh output root")
+        if method == "otpfm":
+            expected = hashlib.sha256((ROOT / "src/flow2pc/distill/otpfm_sampling.py").read_bytes()).hexdigest()
+            if not compatible_implementation(
+                binding.get("sampler", {}).get("implementation_sha256"), expected
+            ):
+                raise ValueError("Sampler code changed since the saved run; use a fresh output root")
         run.status, run.action = "pending", "distill"
     except (ValueError, OSError, KeyError, TypeError, yaml.YAMLError) as error:
         run.status, run.error = "blocked", str(error)
@@ -199,8 +235,9 @@ def summary(args, runs, active, state):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DEFAULT_DATASETS))
-    result.add_argument("--output-root", type=Path, default=Path("/data/lthung/flow2pc/distill/otpfm"))
+    result.add_argument("--method", choices=("otpfm", "alicfm"), default="otpfm")
+    result.add_argument("--datasets", nargs="+", choices=DATASETS)
+    result.add_argument("--output-root", type=Path)
     result.add_argument("--gpus", default="0,1,2,3,4,5,6,7")
     result.add_argument("--workers-per-gpu", type=int, default=2)
     result.add_argument("--max-parallel", type=int, default=16)
@@ -218,6 +255,10 @@ def parser():
 def main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
+    if args.datasets is None:
+        args.datasets = list(DEFAULT_ALICFM_DATASETS if args.method == "alicfm" else DEFAULT_DATASETS)
+    if args.output_root is None:
+        args.output_root = Path("/data/lthung/flow2pc/distill") / args.method
     if (len(args.datasets) != len(set(args.datasets))
             or min(args.workers_per_gpu, args.threads) < 1 or args.max_parallel < 2
             or args.worker_retries < 0
@@ -229,7 +270,7 @@ def main(argv=None):
         for run in runs:
             inspect_run(run, args.retry_incomplete)
         print(json.dumps({
-            "dry_run": args.dry_run, "stage": "distill", "teacher_training": False,
+            "dry_run": args.dry_run, "stage": "distill", "method": args.method, "teacher_training": False,
             "gpus": args.gpus, "max_parallel": args.max_parallel,
             "workers_per_gpu": args.workers_per_gpu, "min_free_gb": args.min_free_gb,
             "output_root": str(args.output_root), "wandb_project": "flow2pc",
