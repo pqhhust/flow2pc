@@ -68,6 +68,10 @@ def load_config(path, overrides=()):
 
 def resolve_config(raw, *, base):
     raw = expand(copy.deepcopy(raw))
+    if isinstance(raw, dict) and "experiment" in raw:
+        from flow2pc.experiments.config import resolve
+
+        return resolve(raw, base)
     if isinstance(raw, dict) and (raw.get("stage") == "evaluate" or (
         raw.get("stage") == "pretrain"
         and isinstance(raw.get("model"), dict)

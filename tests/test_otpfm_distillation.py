@@ -100,6 +100,61 @@ def test_all_118_box_factors_match_native_at_support_boundaries(dtype, monkeypat
     torch.testing.assert_close(j, expected_j, rtol=0, atol=0)
 
 
+@pytest.mark.parametrize("dtype", (torch.float32, torch.float64))
+def test_all_113_gaussian_factors_match_native_without_per_potential_calls(dtype, monkeypatch):
+    cfg = native_config(tuple(i / 114 for i in range(1, 114)))
+    cfg.update(lambda_type="gaussian", width=0.0137)
+    model = create_model(cfg, 2, create_potentials(cfg), "cpu").to(dtype=dtype)
+    model.eval().requires_grad_(False)
+    # Exercise per-potential constants, not just one shared width.
+    for i, potential in enumerate(model.potentials.values()):
+        potential.lambda_fn.set_width(0.0041 + (i % 7) * 0.0023)
+    path = ConditionalPath(model, 0.73)
+    times = torch.cat((torch.linspace(0.0, 1.0, 31, dtype=dtype), path.knots))[:, None]
+    expected_h = torch.stack([model.x_time_dep(p, times) for p in model.potentials.values()])
+    expected_j = torch.stack([model.v_time_dep(p, times) for p in model.potentials.values()])
+    monkeypatch.setattr(model, "x_time_dep", lambda *a: pytest.fail("per-potential Gaussian position loop"))
+    monkeypatch.setattr(model, "v_time_dep", lambda *a: pytest.fail("per-potential Gaussian derivative loop"))
+    h, j = path._time_factors(times, True)
+    tolerance = 2e-6 if dtype == torch.float32 else 1e-12
+    torch.testing.assert_close(h, expected_h, rtol=tolerance, atol=tolerance)
+    torch.testing.assert_close(j, expected_j, rtol=tolerance, atol=tolerance)
+    h_only, unused = path._time_factors(times, False)
+    torch.testing.assert_close(h_only, h, rtol=0, atol=0)
+    assert unused is None
+
+
+def test_gaussian_query_and_timer_preserve_rng_draws_coupling_and_teacher_target(tmp_path):
+    from flow2pc.distill.performance import StepTimer
+    from flow2pc.distill.sampling import draw
+
+    cfg = native_config()
+    cfg["lambda_type"] = "gaussian"
+    model = create_model(cfg, 2, create_potentials(cfg), "cpu")
+    manifest = {"method": "otpfm", "model_config": {"native_config": cfg},
+                "selected_checkpoint": {"sampling_alpha": 0.73}}
+    teacher = FrozenOTPFM(model, manifest, {})
+    dataset = SimpleNamespace(dim=2, observed=[0, 2, 4],
+                              metadata=SimpleNamespace(model_times=(0., .25, .5, .75, 1.)))
+    sampler = OTPFMConditionalSampler(teacher, dataset, {"name": "otpfm_conditional"},
+                                      tmp_path / "checkpoints/last.pt")
+    pools = [torch.randn(12, 2) for _ in range(5)]
+    actual_rng, reference_rng = (torch.Generator().manual_seed(103) for _ in range(2))
+    timer = StepTimer("cpu", enabled=True)
+    actual = sampler.sample_batch(pools, 6, actual_rng, timer=timer)
+    tuples = torch.stack([draw(pools[i], 6, reference_rng) for i in dataset.observed], 1)
+    reference_cache = sampler.path.build_cache(tuples)
+    times = torch.rand(6, generator=reference_rng)
+    native_h = torch.stack([model.x_time_dep(p, times[:, None]) for p in model.potentials.values()])
+    expected = (reference_cache["x0"] + times[:, None] * reference_cache["base"]
+                + 0.73 * (reference_cache["forces"] * native_h).sum(0))
+    torch.testing.assert_close(actual.x_t, expected, rtol=2e-5, atol=2e-5)
+    torch.testing.assert_close(actual.model_t, times, rtol=0, atol=0)
+    torch.testing.assert_close(actual.target_velocity, teacher.velocity(expected, times), rtol=2e-5, atol=2e-5)
+    assert torch.equal(actual_rng.get_state(), reference_rng.get_state())
+    assert set(timer.seconds) == {"query_sampling", "teacher_target"}
+
+
 def test_empty_potential_case_is_the_native_straight_conditional_path():
     cfg = native_config(())
     model = create_model(cfg, 2, create_potentials(cfg), "cpu").eval().requires_grad_(False)

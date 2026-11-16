@@ -4,6 +4,7 @@ See docs/SCHEDULER_SOURCE.json. The controller uses nvidia-smi, never a CUDA
 memory query. These helpers do not import Torch or start workers at import time.
 """
 
+import csv
 import os
 import signal
 import subprocess
@@ -56,3 +57,66 @@ def stop_workers(active):
                 pass
             worker["process"].wait()
         worker["log"].close()
+
+
+def gpu_inventory():
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,uuid,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(f"nvidia-smi query failed: {error}") from error
+    inventory = {}
+    for row in csv.reader(result.stdout.splitlines()):
+        if len(row) != 3:
+            continue
+        index, uuid, free = [value.strip() for value in row]
+        if not index.isdigit():
+            continue
+        inventory[index] = {
+            "uuid": uuid,
+            "free": max(0, int(free)) * 2**20 if free.isdigit() else 0,
+        }
+    return inventory
+
+
+def selected_devices(value, inventory):
+    def resolve(token):
+        token = token.strip()
+        if token in inventory:
+            return token
+        matches = [
+            index
+            for index, row in inventory.items()
+            if token and row["uuid"].startswith(token)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        raise ValueError(f"Unknown/ambiguous physical GPU index or UUID: {token}")
+
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    allowed = (
+        list(inventory)
+        if visible is None
+        else [resolve(token) for token in visible.split(",") if token.strip()]
+    )
+    devices = (
+        allowed if value == "auto" else [resolve(token) for token in value.split(",")]
+    )
+    if len(devices) < 2 or len(set(devices)) != len(devices):
+        raise ValueError(
+            "Select at least two distinct GPUs; no CPU or single-GPU fallback"
+        )
+    if set(devices) - set(allowed):
+        raise ValueError(
+            "Requested GPUs are outside the inherited CUDA_VISIBLE_DEVICES allocation"
+        )
+    return devices

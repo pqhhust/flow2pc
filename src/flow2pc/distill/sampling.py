@@ -78,10 +78,12 @@ def sample_ali_batch(teacher, dataset, pools, count, rng, sampler):
     return DistillationBatch(values, times)
 
 
-def sample_batch(teacher, dataset, pools, count, rng, sampler):
+def sample_batch(teacher, dataset, pools, count, rng, sampler, *, timer=None):
     """Teacher-side dispatch; student construction and velocity MSE are shared."""
     if isinstance(sampler, str):
         return sample_ali_batch(teacher, dataset, pools, count, rng, sampler)
+    if timer is not None:
+        return sampler.sample_batch(pools, count, rng, timer=timer)
     return sampler.sample_batch(pools, count, rng)
 
 

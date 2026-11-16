@@ -1,0 +1,37 @@
+# Evaluation only. Uses existing frozen checkpoints; never retrains.
+stage: evaluate
+experiment: e3_1
+dataset: knot
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/knot/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/otpfm/selected-students/knot
+  metric: auto
+device: cuda:0
+evaluation:
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  bank_sizes:
+  - 5000
+  - 10000
+  source_split: analytic_knot
+  reference_split: analytic_knot
+  analytic_seed: 20261113
+  max_test_samples: 10000
+  bandwidth_scale: model_std
+  hdr_representation: auto
+logging:
+  mode: online
+  project: flow2pc
+  name: knot-otpfm-e3_1-analytic-selected-emd
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_1/knot-analytic-v1/otpfm/knot

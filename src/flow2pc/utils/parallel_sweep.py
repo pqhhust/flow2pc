@@ -71,7 +71,7 @@ class ParallelSweep:
         try:
             process = subprocess.Popen(command, cwd=self.repo, env=env, stdout=stream,
                                        stderr=subprocess.STDOUT, start_new_session=True,
-                                       pass_fds=(lock.fileno(),))
+                                       pass_fds=(lock.fileno(), *getattr(self.args, "worker_lock_fds", ())))
         except BaseException:
             stream.close()
             raise

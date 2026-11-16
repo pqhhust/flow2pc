@@ -15,6 +15,7 @@ from flow2pc.data.metric_registry import load_dataset
 from flow2pc.data.restore import restore_dataset
 from flow2pc.pretrain.models.alicfm.query_policy import resolve_sampler
 from flow2pc.distill.sampling import sample_batch, sample_mfm_batch, sample_mmfm_batch, velocity_mse
+from flow2pc.distill.performance import StepTimer, population_diagnostic_indices
 from flow2pc.distill.student import (
     build_optimizer,
     build_student,
@@ -218,6 +219,12 @@ def _run_ali(config):
         },
     )
     atomic_json(output / "status.json", {"status": "running"})
+    is_otpfm = teacher.manifest["method"] == "otpfm"
+    diagnostic_view = teacher_diagnostic_cache = None
+    if is_otpfm and cfg.get("validation_population_metrics", True):
+        from flow2pc.evaluation.teacher_cache import FrozenTeacherDiagnosticCache
+
+        teacher_diagnostic_cache = FrozenTeacherDiagnosticCache()
     logger = None
     try:
         logger = LocalLogger(output, config, append=previous is not None)
@@ -246,51 +253,68 @@ def _run_ali(config):
         if previous is None:
             save(last_path, checkpoint(0))
         for step in range(start, cfg["steps"] + 1):
+            validating = (step == 1 or step % cfg.get("validate_every", 1000) == 0
+                          or step == cfg["steps"])
+            timer = StepTimer(device, enabled=is_otpfm and (
+                validating or step % cfg.get("log_every", 100) == 0
+            ))
             student.train()
             batch = sample_batch(
-                teacher, dataset, pools, cfg["batch_size"], rng, sampler
+                teacher, dataset, pools, cfg["batch_size"], rng, sampler,
+                timer=timer if is_otpfm else None,
             )
-            optimizer.zero_grad(set_to_none=True)
-            loss = velocity_mse(student, teacher, batch)
-            if not torch.isfinite(loss):
-                raise FloatingPointError("Non-finite distillation velocity MSE")
-            loss.backward()
-            grad = torch.nn.utils.clip_grad_norm_(
-                student.parameters(), 1.0, error_if_nonfinite=True
-            )
-            optimizer.step()
-            scheduler.step()
+            with timer.measure("student_update"):
+                optimizer.zero_grad(set_to_none=True)
+                loss = velocity_mse(student, teacher, batch)
+                if not torch.isfinite(loss):
+                    raise FloatingPointError("Non-finite distillation velocity MSE")
+                loss.backward()
+                grad = torch.nn.utils.clip_grad_norm_(
+                    student.parameters(), 1.0, error_if_nonfinite=True
+                )
+                optimizer.step()
+                scheduler.step()
             row = {
                 "train/step": step,
                 "train/velocity_mse": float(loss.detach()),
                 "train/gradient_norm_before_clip": float(grad),
                 "train/learning_rate": optimizer.param_groups[0]["lr"],
             }
-            if (
-                step == 1
-                or step % cfg.get("validate_every", 1000) == 0
-                or step == cfg["steps"]
-            ):
-                scores = validate(
-                    student, groups, energy, cfg.get("validation_batch_size", 128)
-                )
+            if validating:
+                with timer.measure("velocity_validation"):
+                    scores = validate(
+                        student, groups, energy, cfg.get("validation_batch_size", 128)
+                    )
                 if not all(torch.isfinite(torch.tensor(v)) for v in scores.values()):
                     raise FloatingPointError("Non-finite validation velocity error")
                 row.update({"validation/" + k: v for k, v in scores.items()})
                 if scores["selection_score"] < best:
                     best, best_step = scores["selection_score"], step
-                    save(output / "checkpoints/best.pt", checkpoint(step))
+                    with timer.measure("checkpoint_io"):
+                        save(output / "checkpoints/best.pt", checkpoint(step))
                 if cfg.get("validation_population_metrics", True):
                     from flow2pc.evaluation.metric_flow import evaluate as population_evaluate, from_ali_dataset
-                    view = from_ali_dataset(dataset)
-                    scope = validation_scope(dataset, cfg)
-                    diagnostics = population_evaluate(student, teacher, view, {
-                        "samples": cfg.get("validation_batch_size", 128),
-                        "source_split": "all" if scope == "heldout_times" else "validation",
-                        "reference_split": "validation",
-                        "time_indices": view.heldout_indices if scope == "heldout_times" else view.observed_indices,
-                        "metric_space": "dataset", "solver": "dopri5", "seed": 2026,
-                    }, device)
+                    with timer.measure("population_diagnostics"):
+                        if is_otpfm:
+                            if diagnostic_view is None:
+                                diagnostic_view = from_ali_dataset(dataset)
+                            view = diagnostic_view
+                            indices = population_diagnostic_indices(view, cfg, config.get("evaluation", {}))
+                        else:
+                            view = from_ali_dataset(dataset)
+                            scope = validation_scope(dataset, cfg)
+                            indices = view.heldout_indices if scope == "heldout_times" else view.observed_indices
+                        scope = validation_scope(dataset, cfg)
+                        extra = {"teacher_cache": teacher_diagnostic_cache} if is_otpfm else {}
+                        diagnostics = population_evaluate(student, teacher, view, {
+                            "samples": cfg.get("validation_batch_size", 128),
+                            "source_split": "all" if scope == "heldout_times" else "validation",
+                            "reference_split": "validation", "time_indices": indices,
+                            "metric_space": "dataset", "solver": "dopri5", "seed": 2026,
+                        }, device, **extra)
+                    if teacher_diagnostic_cache is not None:
+                        row["timing/teacher_diagnostic_cache_hits"] = teacher_diagnostic_cache.hits
+                        row["timing/teacher_diagnostic_cache_misses"] = teacher_diagnostic_cache.misses
                     diagnostics["checkpoint_step"] = step
                     log_population_metrics(logger, diagnostics, namespace="validation")
                 print(
@@ -303,7 +327,13 @@ def _run_ali(config):
                 or step == cfg["steps"]
                 or "validation/selection_score" in row
             ):
-                save(last_path, checkpoint(step))
+                with timer.measure("checkpoint_io"):
+                    save(last_path, checkpoint(step))
+            row.update(timer.metrics())
+            if timer.enabled:
+                print(f"step={step} elapsed_seconds " + " ".join(
+                    f"{name}={seconds:.4f}" for name, seconds in timer.seconds.items()
+                ), flush=True)
             if (
                 step == 1
                 or step % cfg.get("log_every", 100) == 0

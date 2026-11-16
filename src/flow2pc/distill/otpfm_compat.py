@@ -1,6 +1,6 @@
 """Torch-free compatibility for the conditional-v1 performance-only change.
 
-Only the two explicitly listed source revisions may differ in a resumed
+Only the explicitly listed source revisions may differ in a resumed
 binding. Every query setting and the rest of the binding must still match.
 Adding a future implementation here requires a separate equivalence review.
 """
@@ -8,6 +8,8 @@ Adding a future implementation here requires a separate equivalence review.
 CONDITIONAL_V1_IMPLEMENTATIONS = frozenset({
     "71c2e9a50a34310901bf277e7da1f3d9297e13ca83a21a812f66a8a9a3f84c14",
     "a34e312f479293e22adbdf0805f16a8944b5d0ef002d19681a32bac22f5e5f65",
+    # Same conditional-v1 formulas/RNG order; vectorized Gaussian time factors.
+    "7d005bde1f8a44fa9d4ae7f8ec80af3290184e4e00ba7ecbdbd68419cd3fa0b9",
 })
 
 

@@ -162,7 +162,8 @@ def checkpoint_readme(bundle, filename):
         preprocessing = {"normalise": True, "whiten": False, "min": lo.tolist(), "max": hi.tolist()}
         seed, training = 42, bundle["weights"]["config"]
     scores = {k: v for k, v in bundle["saved_metrics"].items() if
-              k in ("teacher_mean_emd", "teacher_heldout_emd", "teacher_final_emd", "teacher_heldout_w2", "teacher_train_w2")}
+              k in ("teacher_mean_emd", "teacher_heldout_emd", "teacher_final_emd",
+                    "teacher_mean_w2", "teacher_final_w2", "teacher_heldout_w2", "teacher_train_w2")}
     protocol = bundle["saved_metrics"].get("protocol", {})
     data = {k: data[k] for k in ("name", "dim", "root", "physical_times", "model_times",
                                 "observed_indices", "heldout_indices", "params", "source", "split_seed") if k in data}
@@ -189,8 +190,9 @@ are omitted where unused by the frozen teacher loaders.
 Some methods save only a final checkpoint; no earlier best step was invented.
 {"For this OTP-FM transport dataset, W2 is the best of the four completed native recipes by their saved native W2 score." if bundle['method'] == 'otpfm' and bundle['dataset'] in ('gom', 'beijing') else "Selection is specific to this configured teacher; no best-over-training checkpoint was synthesized."}
 W2 scores and W1 EMD are different metrics.
+{"This ALI-CFM transport recipe was originally selected by W1 and is retained for current experiments. Its reported W2 is a reevaluation of these same weights; no W2 sweep winner is claimed." if bundle['method'] == 'alicfm' and bundle['dataset'] in ('gom', 'beijing') and 'teacher_heldout_w2' in scores else ''}
 
-Saved evaluation (no new evaluation was run):
+Saved evaluation copied from the source report (exporting does not run a model):
 
 ```json
 {json.dumps({'scores': scores, 'protocol': protocol}, indent=2)}
@@ -331,6 +333,80 @@ def export(args):
                       "checkpoint_bytes": sum(r["bytes"] for r in records)}, indent=2))
 
 
+def refresh_metrics(args):
+    """Refresh selected portable score metadata; never replace their weights."""
+    root = args.output_dir.resolve()
+    index_path = root / "index.json"
+    index = json.loads(index_path.read_text())
+    if len({p.resolve() for p in args.checkpoints}) != len(args.checkpoints):
+        raise ValueError("Each portable checkpoint may be refreshed only once per command")
+    prepared = []
+    for path in args.checkpoints:
+        path = path.resolve()
+        if root not in path.parents:
+            raise ValueError("Refreshed checkpoints must belong to the indexed export")
+        bundle = read_bundle(path)
+        if bundle["source_format"] != "framework":
+            raise ValueError("Historical teachers need a separately declared evaluation")
+        source = Path(bundle["source_checkpoint"])
+        if digest(source.read_bytes()) != bundle["source_checkpoint_sha256"]:
+            raise ValueError("Source teacher differs from the portable checkpoint")
+        metrics = json.loads((source.parent.parent / "eval/metrics.json").read_text())
+        if bundle["dataset"] in ("gom", "beijing") and bundle["method"] == "alicfm":
+            # The standalone unpack/verify functionality remains Torch/PyYAML
+            # only. Import repository policy solely for this maintenance action.
+            import sys
+
+            sys.path.insert(0, str(ROOT / "src"))
+            from flow2pc.evaluation.config import transport_w2_complete
+
+            manifest = json.loads(bundle["files"]["manifest.json"])
+            if not transport_w2_complete(metrics, manifest["dataset"]["heldout_indices"]):
+                raise ValueError("Source report has no complete corrected W2 evaluation")
+        bundle["saved_metrics"] = metrics
+        bundle["metrics_refreshed_utc"] = datetime.now(timezone.utc).isoformat()
+        validate_bundle(bundle)
+        row = next(r for r in index["models"] if (root / r["file"]).resolve() == path)
+        prepared.append((path, bundle, row))
+    # Preserve the old pack files/README/index, and stage every replacement before
+    # changing any live file. Weight fingerprints and embedded metadata stay put.
+    backup = root / (".metrics-backup-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f"))
+    backup.mkdir()
+    shutil.copy2(index_path, backup / index_path.name)
+    shutil.copy2(root / "README.md", backup / "README.md")
+    with tempfile.TemporaryDirectory(prefix=".refresh-metrics-", dir=root) as directory:
+        staged = []
+        for path, bundle, row in prepared:
+            name = str(path.relative_to(root))
+            old_readme = path.with_name(path.stem + ".README.md")
+            target = backup / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            shutil.copy2(old_readme, target.with_name(old_readme.name))
+            updated = Path(directory) / name
+            updated.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(bundle, updated)
+            read_bundle(updated)
+            readme = updated.with_name(old_readme.name)
+            readme.write_text(checkpoint_readme(bundle, name))
+            row.update(sha256=digest(updated.read_bytes()), bytes=updated.stat().st_size)
+            staged.extend(((updated, path), (readme, old_readme)))
+        staged_index = Path(directory) / "index.json"
+        staged_index.write_bytes(json_bytes(index))
+        staged.append((staged_index, index_path))
+        readme = Path(directory) / "README.md"
+        readme.write_text((root / "README.md").read_text() +
+                          "\nScore metadata refreshed on " + datetime.now(timezone.utc).isoformat() +
+                          ": " + ", ".join(p.name for p, _, _ in prepared) +
+                          ". These are the same teacher weights, rescored from their saved source reports. "
+                          "ALI-CFM transport retains its original W1-selected recipes; no W2 sweep winner is claimed.\n")
+        staged.append((readme, root / "README.md"))
+        for source, destination in staged:
+            source.replace(destination)
+    print(json.dumps({"updated": [str(p) for p, _, _ in prepared],
+                      "backup": str(backup), "weights_changed": False}, indent=2))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
@@ -339,6 +415,9 @@ def main(argv=None):
     command.add_argument("--output-dir", type=Path, default=Path("/data/lthung/flow2pc/teacher-checkpoints"))
     command.add_argument("--historical-checkpoint", type=Path, default=Path("/data/pqhung_group/lthung/ali-cfm/changed_files/ali_cfm_model.pth"))
     command.add_argument("--historical-metadata", type=Path, default=ROOT / "configs/teacher_metadata/alicfm_cell_tracking.json")
+    command = commands.add_parser("refresh-metrics")
+    command.add_argument("checkpoints", type=Path, nargs="+")
+    command.add_argument("--output-dir", type=Path, default=Path("/data/lthung/flow2pc/teacher-checkpoints"))
     for action in ("verify", "unpack"):
         command = commands.add_parser(action)
         command.add_argument("checkpoints", type=Path, nargs="+")
@@ -347,6 +426,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.action == "export":
         export(args)
+        return 0
+    if args.action == "refresh-metrics":
+        refresh_metrics(args)
         return 0
     records = []
     for path in args.checkpoints:

@@ -63,6 +63,11 @@ Arch/Sphere middle populations remain test data.
 The selected teacher presets log to W&B project `flow2pc` and retain final
 evaluation/figures. Existing trained checkpoints and sweep outputs are preserved.
 
+Research experiment YAMLs are grouped separately under
+`experiments/<experiment>/{alicfm,otpfm}/`, with filenames such as
+`alicfm_beijing_hclt.yaml`. They use `stage: evaluate` and an explicit experiment
+name; they never start training. See [experiment protocols and launch commands](../docs/experiments/README.md).
+
 OTP-FM distillation uses the restored `otpfm_conditional` sampler and the existing
 HCLT student/velocity-MSE training. Presets load the ten selected shared-data
 teachers; transport W2/W2Inf presets also load migrated reference teachers.

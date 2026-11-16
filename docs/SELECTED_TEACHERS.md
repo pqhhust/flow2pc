@@ -1,5 +1,11 @@
 # Selected ALI-CFM and OTP-FM teachers
 
+2026-11-13 correction: ALI-CFM GOM/Beijing below are the retained **W1-selected**
+recipes. Pretraining evaluation and sweep selection now use W2; no new W2
+ranking is claimed until the evaluation-only recovery finishes. Existing teacher
+checkpoints remain usable for ongoing experiments. See
+[the correction and scripts](TRANSPORT_W2_CORRECTION.md).
+
 Selection snapshots: real datasets 2026-11-05; Arch/Sphere/LiDAR 2026-11-06. Each preset copies the winning run’s seed,
 data/preprocessing, model parameters, training budget and evaluation settings.
 Only the output directory and W&B run name change for a new pretraining run.

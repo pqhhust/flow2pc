@@ -182,12 +182,13 @@ def _numerical_failure(error):
 
 
 @torch.no_grad()
-def evaluate(student, teacher, data, settings, device, output_dir=None):
+def evaluate(student, teacher, data, settings, device, output_dir=None, *, teacher_cache=None):
     """Both prediction modes are diagnostics; neither selects the checkpoint.
 
     Direct samples get separate RNG scopes so enabling them cannot change ODE
     particles, references, or subsequent training draws. Numerical failures are
     reported per prediction mode, while programming/contract errors propagate.
+    An optional run-local cache reuses only deterministic frozen teacher work.
     """
     device = torch.device(device)
     samples, seed = int(settings.get("samples", 512)), int(settings.get("seed", 2026))
@@ -227,7 +228,13 @@ def evaluate(student, teacher, data, settings, device, output_dir=None):
                 modes.append(("student_ode", student.velocity))
             for name, velocity in modes:
                 try:
-                    path = _rollout(velocity, initial, times, settings)
+                    if name == "teacher_ode" and teacher_cache is not None:
+                        path = teacher_cache.rollout(
+                            teacher, initial, times, settings,
+                            lambda: _rollout(velocity, initial, times, settings),
+                        )
+                    else:
+                        path = _rollout(velocity, initial, times, settings)
                     if not torch.isfinite(path).all():
                         raise FloatingPointError("Nonfinite ODE samples")
                     paths[name] = path
@@ -256,7 +263,16 @@ def evaluate(student, teacher, data, settings, device, output_dir=None):
                         left = max(i for i in data.observed_indices if i < index)
                         local_source = fixed_subset(_population(data, left, settings.get("source_split", "all")), samples, seed + left)
                         try:
-                            predicted = _rollout(velocity, local_source.flatten(1).to(device), times[[left, index]], settings)[-1]
+                            local_initial = local_source.flatten(1).to(device)
+                            local_times = times[[left, index]]
+                            if name == "teacher_ode" and teacher_cache is not None:
+                                local_path = teacher_cache.rollout(
+                                    teacher, local_initial, local_times, settings,
+                                    lambda: _rollout(velocity, local_initial, local_times, settings),
+                                )
+                            else:
+                                local_path = _rollout(velocity, local_initial, local_times, settings)
+                            predicted = local_path[-1]
                             if not torch.isfinite(predicted).all():
                                 raise FloatingPointError("Nonfinite local ODE samples")
                         except (FloatingPointError, RuntimeError, AssertionError) as error:
@@ -272,8 +288,14 @@ def evaluate(student, teacher, data, settings, device, output_dir=None):
                         predicted = paths[name][index]
                         row["source_index"] = 0
                     predictions[name] = transform(predicted)
-                    row.update({name + "_" + key: value for key, value in
-                                _distances(real, predictions[name], transport).items()})
+                    if name == "teacher_ode" and teacher_cache is not None:
+                        distances = teacher_cache.distances(
+                            teacher, real, predictions[name], transport,
+                            lambda: _distances(real, predictions[name], transport),
+                        )
+                    else:
+                        distances = _distances(real, predictions[name], transport)
+                    row.update({name + "_" + key: value for key, value in distances.items()})
                 if "teacher_ode" in predictions and "student_ode" in predictions:
                     row["paired_ode_mse"] = float((predictions["student_ode"] - predictions["teacher_ode"]).square().mean())
                 if student is not None:

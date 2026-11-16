@@ -41,6 +41,52 @@ The derivative remains available explicitly for diagnostics. Numeric parity
 regressions cover native forces, both position/derivative paths, and all 118
 knot support boundaries in float32/float64; these tests have not been run.
 
+Gaussian time factors are also evaluated together, including the 113-potential
+tracking recipe. Their native CDF/PDF expressions and operation ordering are
+retained. Knots, widths, normalizers, zero-time CDF/PDF values and the native
+Python-computed endpoint constants are prepared once on the teacher device.
+The full-strength LU factorization is still prepared once; each fresh independent
+tuple still gets its own solve. No pool of conditional trajectories replaces
+fresh training queries. Float32/float64 regression cases compare all 113 factors
+and the returned states/teacher targets against the native expressions, and
+check that the RNG draw order is unchanged. These new cases have not been run.
+
+### Distillation performance diagnostics
+
+The shared runner enables the following execution changes for OTP-FM only:
+
+- Intermediate population diagnostics reuse a run-local CPU cache of frozen
+  teacher rollouts and teacher EMD/W2 values. Keys include exact source states,
+  time grids, solver settings and comparison populations. Teacher tensor
+  replacement/version changes invalidate the cache. Student ODE predictions and
+  direct PC samples are recomputed at every diagnostic checkpoint. Numerical
+  failures are not cached. No persistent cache or training tuple cache is added.
+- The dataset population view is materialized once for these repeated checks.
+- Tracking population EMD/direct-PC diagnostics use the six configured
+  `evaluation.time_indices`, rather than all 115 frames. Velocity-MSE selection,
+  including late/final tracking queries, is unchanged. The ODE solver still uses
+  the same full time grid and tolerance. Other datasets keep their existing
+  intermediate population scoring times.
+- At logged/validation updates, synchronized elapsed timings are saved locally
+  and to W&B as `timing/query_sampling_seconds`,
+  `timing/teacher_target_seconds`, `timing/student_update_seconds`,
+  `timing/velocity_validation_seconds`, `timing/population_diagnostics_seconds`
+  and `timing/checkpoint_io_seconds`. Cache hits/misses are logged too. These are
+  sampled wall times under the actual shared-GPU workload, not averages over all
+  updates or exclusive GPU kernel times. Synchronization is limited to those
+  sampled updates; the default logging interval is 100 steps.
+
+These changes leave `src/flow2pc/pc/`, `distill/student.py`, velocity-MSE math,
+optimizer/scheduler, teacher source and configurations untouched. They do not
+remove external GPU contention or change the selected teacher network size.
+Running Python workers keep the code they already imported: the optimization
+applies to newly started workers. Known conditional-v1 sampler hashes are
+explicitly allowlisted for resume, while all teacher/data/student/training
+binding checks and saved best-checkpoint selection history remain enforced.
+Regression tests are in `tests/test_distill_performance.py` and
+`tests/test_otpfm_distillation.py`; training/evaluation/tests were not run during
+this edit.
+
 ## Recovered details that matter
 
 - The full-strength W2Inf linear system is factored once. Alpha multiplies its
@@ -226,7 +272,8 @@ eval/population/{evaluation.json,comparison.png,media.json,...}
 Resume retains the existing strict teacher/data/sampler/model/training binding,
 optimizer, scheduler and RNG state. Changing the checkpoint, coupling, alpha or
 sampler implementation requires a new output directory.
-The original conditional-v1 source and its position-only/vectorized-box revision
+The original conditional-v1 source and its position-only/vectorized-box and
+vectorized-Gaussian revisions
 are the sole explicit exception: `otpfm_compat.py` lists their exact hashes and
 still requires every other binding field to agree. Resume retains the original
 binding/best-checkpoint identity and separately records the current sampler

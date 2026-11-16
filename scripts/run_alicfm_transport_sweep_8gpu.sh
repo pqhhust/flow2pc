@@ -10,5 +10,5 @@ exec "${FLOW2PC_PYTHON:-/data/nvidia/conda_envs/uffm/bin/python}" \
   --min-free-gb "${MIN_FREE_GB:-4}" \
   --min-disk-free-gb "${MIN_DISK_FREE_GB:-20}" \
   --data-root "${OTP_FM_DATA_ROOT:-/data/lthung/otp-fm}" \
-  --output-root "${ALICFM_SWEEP_ROOT:-/data/lthung/flow2pc/alicfm-transport/sweep-512}" \
+  --output-root "${ALICFM_SWEEP_ROOT:-/data/lthung/flow2pc/alicfm-transport/sweep-w2-512}" \
   "$@"

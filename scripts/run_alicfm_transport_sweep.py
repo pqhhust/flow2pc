@@ -34,6 +34,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow2pc.utils.config import load_config  # noqa: E402
+from flow2pc.evaluation.config import TRANSPORT_W2_PROTOCOL, transport_w2_complete  # noqa: E402
 from flow2pc.utils.gpu_queue import choose_device, stop_workers  # noqa: E402
 from run_alicfm_checks import atomic_json, gpu_inventory, selected_devices  # noqa: E402
 
@@ -67,6 +68,7 @@ class Run:
     tracking_status: str = "unknown"
     retries: int = 0
     not_before: float = 0.0
+    evaluate_only: bool = False
 
 
 def data_headers(root, dataset):
@@ -123,8 +125,9 @@ def build_runs(args):
             )
             config["data"]["root"] = str(args.data_root)
             config["output"]["dir"] = str(output)
-            config["logging"].update(project="flow2pc", name=f"alicfm-{name}")
-            runs.append(Run(dataset, name, config, output, params))
+            config["logging"].update(project="flow2pc", mode=getattr(args, "mode", "online"), name=f"alicfm-{name}")
+            runs.append(Run(dataset, name, config, output, params,
+                            evaluate_only=getattr(args, "evaluate_only", False)))
     return runs
 
 
@@ -142,13 +145,17 @@ def tracking_error(message):
 
 def prepare(run, retry_incomplete=False):
     if not run.output.exists():
+        if run.evaluate_only:
+            run.status, run.error = "blocked", "Evaluation-only mode: existing checkpoint directory is missing; training is disabled"
         return
     saved = run.output / "resolved_config.yaml"
     if not saved.is_file() or scientific_config(yaml.safe_load(saved.read_text())) != scientific_config(run.config):
         run.status, run.error = "blocked", "Existing scientific settings differ or metadata is missing; use a fresh sweep root"
         return
     if not (run.output / "checkpoints/last.pt").is_file():
-        if retry_incomplete:
+        if run.evaluate_only:
+            run.status, run.error = "blocked", "Evaluation-only mode: checkpoint missing; training is disabled"
+        elif retry_incomplete:
             run.action, run.status = "restart", "pending"
             run.error = "Previous incomplete attempt will be archived, then retrained"
         else:
@@ -165,9 +172,7 @@ def prepare(run, retry_incomplete=False):
     only_tracking_failed = all(s.get("status") == "complete" or tracking_error(s.get("error", "")) for s in states)
     expected_protocol = {k: v for k, v in run.config["evaluation"].items() if k not in ("enabled", "image_dir")}
     protocol_matches = all(run.metrics.get("protocol", {}).get(k) == v for k, v in expected_protocol.items())
-    finite = correct_rows and all(math.isfinite(r["teacher_emd"]) for r in rows)
-    mean_matches = finite and math.isclose(sum(r["teacher_emd"] for r in rows) / 4,
-                                         run.metrics.get("teacher_heldout_emd", math.inf), rel_tol=1e-12, abs_tol=1e-12)
+    mean_matches = correct_rows and transport_w2_complete(run.metrics, HOLDOUTS[run.dataset])
     if (states_complete or only_tracking_failed) and mean_matches and protocol_matches and media and all(Path(p).is_file() for p in media.values()):
         run.status = "complete"
         run.error = ""
@@ -185,10 +190,29 @@ def inspect_run(run, retry_incomplete=False):
 
 
 def command_for(run, config_path):
+    if run.evaluate_only and run.action != "evaluate":
+        raise ValueError("Evaluation-only sweep refuses to launch training")
     command = [sys.executable, str(ROOT / "main.py"), "--config", str(config_path)]
     if run.action == "evaluate":
         command += ["--evaluate", "teacher"]
     return command
+
+
+def preserve_w1_rankings(root, datasets):
+    """Keep the historical W1 rankings before a W2 reevaluation changes them."""
+    for folder, names in [(root, ("summary.csv", "sweep_plan.json")),
+                          *((root / dataset, ("summary.csv", "best_models.json")) for dataset in datasets)]:
+        for name in names:
+            source = folder / name
+            backup = source.with_name(source.stem + ".w1-before-w2" + source.suffix)
+            if source.is_file() and not backup.exists():
+                if source.suffix == ".json" and read_json(source).get("selection_metric") == "teacher_heldout_w2":
+                    continue
+                if source.suffix == ".csv":
+                    with source.open() as handle:
+                        if "teacher_heldout_w2" in next(csv.reader(handle), []):
+                            continue
+                shutil.copy2(source, backup)
 
 
 def check_worker_entrypoint():
@@ -225,6 +249,8 @@ def summary(args, runs, active, state):
     rows = []
     for run in runs:
         row = dict(dataset=run.dataset, run=run.name, status=run.status,
+                   teacher_heldout_w2=run.metrics.get("teacher_heldout_w2"),
+                   teacher_mean_w2=run.metrics.get("teacher_mean_w2"),
                    teacher_heldout_emd=run.metrics.get("teacher_heldout_emd"),
                    teacher_mean_emd=run.metrics.get("teacher_mean_emd"),
                    checkpoint=str(run.output / "checkpoints/last.pt"),
@@ -232,6 +258,8 @@ def summary(args, runs, active, state):
                    error=run.error, **run.params)
         scores = {r["index"]: r["teacher_emd"] for r in run.metrics.get("scores", [])}
         row.update({f"holdout_emd_{i}": scores.get(i) for i in HOLDOUTS[run.dataset]})
+        w2 = {r["index"]: r.get("teacher_w2") for r in run.metrics.get("scores", [])}
+        row.update({f"holdout_w2_{i}": w2.get(i) for i in HOLDOUTS[run.dataset]})
         rows.append(row)
     fields = list(dict.fromkeys(key for row in rows for key in row))
     def write_csv(path, selected):
@@ -250,11 +278,13 @@ def summary(args, runs, active, state):
     for dataset in args.datasets:
         selected = [row for row in rows if row["dataset"] == dataset]
         ranked = sorted((r for r in selected if r["status"] == "complete"
-                         and isinstance(r["teacher_heldout_emd"], (int, float))
-                         and math.isfinite(r["teacher_heldout_emd"])), key=lambda r: r["teacher_heldout_emd"])
+                         and isinstance(r["teacher_heldout_w2"], (int, float))
+                         and math.isfinite(r["teacher_heldout_w2"])), key=lambda r: r["teacher_heldout_w2"])
         write_csv(args.output_root / dataset / "summary.csv", selected)
         atomic_json(args.output_root / dataset / "best_models.json", {
-            "selection_metric": "mean raw-coordinate W1 EMD across four temporal holdouts",
+            "selection_metric": "teacher_heldout_w2",
+            "metric_protocol_version": TRANSPORT_W2_PROTOCOL,
+            "selection_description": "mean raw-coordinate W2 across four temporal holdouts; exact observation times",
             "heldout_indices": HOLDOUTS[dataset], "best": ranked[:10],
             "selection_note": "Temporal holdouts are used for tuning; this is not an untouched test score",
         })
@@ -424,7 +454,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--datasets", nargs="+", choices=("gom", "beijing"), default=["gom", "beijing"])
     parser.add_argument("--data-root", type=Path, default=Path("/data/lthung/otp-fm"))
-    parser.add_argument("--output-root", type=Path, default=Path("/data/lthung/flow2pc/alicfm-transport/sweep-512"))
+    parser.add_argument("--output-root", type=Path, default=Path("/data/lthung/flow2pc/alicfm-transport/sweep-w2-512"))
     parser.add_argument("--gpus", default="0,1,2,3,4,5,6,7")
     parser.add_argument("--workers-per-gpu", type=int, default=1)
     parser.add_argument("--max-parallel", type=int, default=8)
@@ -432,8 +462,10 @@ def main(argv=None):
     parser.add_argument("--min-disk-free-gb", type=float, default=20, help="Pause new workers below this many GiB free on the output filesystem")
     parser.add_argument("--worker-retries", type=int, default=1)
     parser.add_argument("--retry-incomplete", action="store_true", help="Preserve partial runs in _attempts before retraining; never overwrite final checkpoints")
+    parser.add_argument("--evaluate-only", action="store_true", help="Reuse existing teacher checkpoints; missing checkpoints are blocked and training is forbidden")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--mode", choices=("online", "offline", "disabled"), default="online")
     parser.add_argument("--pretrain-steps", type=int, default=2000)
     parser.add_argument("--gan-steps", type=int, default=30000)
     parser.add_argument("--cfm-steps", type=int, default=10000)
@@ -451,15 +483,23 @@ def main(argv=None):
     runs = build_runs(args)
     for task in runs:
         inspect_run(task, args.retry_incomplete)
-    if not args.summarize_only:
+    if not args.summarize_only and not args.dry_run:
         try:
             check_worker_entrypoint()
         except (ValueError, OSError, subprocess.TimeoutExpired) as error:
             parser.error(str(error))
-    inventory = {} if args.summarize_only else gpu_inventory()
-    devices = [] if args.summarize_only else selected_devices(args.gpus, inventory)
+    if args.dry_run:
+        # A preview must not import workers or query the GPU driver.
+        devices = [value.strip() for value in args.gpus.split(",") if value.strip()]
+        if not devices or len(devices) != len(set(devices)):
+            parser.error("GPU identifiers must be nonempty and unique")
+    else:
+        inventory = {} if args.summarize_only else gpu_inventory()
+        devices = [] if args.summarize_only else selected_devices(args.gpus, inventory)
     args.max_parallel = min(args.max_parallel, len(devices) * args.workers_per_gpu) if devices else 0
     print(json.dumps({"dry_run": args.dry_run, "total_runs": len(runs),
+                     "evaluate_only": args.evaluate_only, "teacher_training": not args.evaluate_only,
+                     "selection_metric": "teacher_heldout_w2", "controller_loaded_torch": "torch" in sys.modules,
                      "runs_per_dataset": 512, "grid": GRID, "data": headers,
                      "gpus": devices, "workers_per_gpu": args.workers_per_gpu,
                      "max_parallel": args.max_parallel, "output_root": str(args.output_root),
@@ -476,10 +516,15 @@ def main(argv=None):
         except BlockingIOError:
             parser.error("Another controller/worker holds this sweep root; do not start duplicates")
         if args.summarize_only:
+            if args.evaluate_only:
+                preserve_w1_rankings(args.output_root, args.datasets)
             summary(args, runs, [], "summary_only")
             return 0
+        if args.evaluate_only:
+            preserve_w1_rankings(args.output_root, args.datasets)
         atomic_json(args.output_root / "sweep_plan.json", {
-            "grid": GRID, "selection_metric": "teacher_heldout_emd", "heldout_indices": HOLDOUTS,
+            "grid": GRID, "selection_metric": "teacher_heldout_w2", "heldout_indices": HOLDOUTS,
+            "metric_protocol_version": TRANSPORT_W2_PROTOCOL,
             "seed": args.seed, "runs": [{"name": r.name, "dataset": r.dataset, "config": r.config} for r in runs],
         })
         return run_queue(args, runs, devices, lock)

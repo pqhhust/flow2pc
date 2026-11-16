@@ -14,6 +14,13 @@ def test_runnable_configs_use_method_folders_and_explicit_student_names():
         if "upstream" in path.parts:
             continue
         config = yaml.safe_load(path.read_text())
+        if "experiment" in config:
+            relative = path.relative_to(ROOT / "configs/experiments" / config["experiment"])
+            method = relative.parts[0]
+            assert config["stage"] == "evaluate"
+            assert method == config["teacher"]["name"]
+            assert path.stem == f"{method}_{config['dataset']}_hclt"
+            continue
         stage = config["stage"]
         relative = path.relative_to(ROOT / "configs" / stage)
         method = relative.parts[0]

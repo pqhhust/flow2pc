@@ -1,0 +1,34 @@
+# Evaluation only. Uses existing frozen checkpoints; never retrains.
+stage: evaluate
+experiment: e3_1
+dataset: cite100
+teacher:
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/cite100/checkpoints/last.pt
+  name: alicfm
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/alicfm/selected-students/cite100
+  metric: auto
+device: cuda:0
+evaluation:
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  bank_sizes:
+  - 5000
+  - 10000
+  source_split: all
+  reference_split: protocol
+  hdr_representation: pca2
+logging:
+  mode: online
+  project: flow2pc
+  name: cite100-alicfm-e3_1-selected-emd
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_1/selected-emd-v1/alicfm/cite100

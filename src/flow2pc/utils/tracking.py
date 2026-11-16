@@ -17,6 +17,7 @@ class LocalLogger:
         self.mode = config["logging"]["mode"]
         self.resilient = (config.get("training", {}).get("protocol") in ("marginal", "endpoints")
                           or config.get("stage") == "distill"
+                          or config.get("experiment") is not None
                           or config.get("model", {}).get("name") in ("otpfm", "mfm", "mmfm"))
         self.tracking_errors = []
         self.offline = False
@@ -208,4 +209,3 @@ def log_population_metrics(logger, report, *, namespace="eval", output=None):
             with logger.remote("population comparison images"):
                 logger.run.log({f"{namespace}/{key}": wandb.Image(value)
                                 for key, value in json.loads(path.read_text()).items()})
-

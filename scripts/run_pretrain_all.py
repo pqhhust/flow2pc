@@ -23,6 +23,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow2pc.utils.config import resolve_config  # noqa: E402
+from flow2pc.evaluation.config import transport_w2_complete  # noqa: E402
 from flow2pc.utils.parallel_sweep import ParallelSweep  # noqa: E402
 from run_alicfm_checks import atomic_json, gpu_inventory, selected_devices  # noqa: E402
 
@@ -134,6 +135,13 @@ def inspect_run(run, retry_incomplete=False):
             and bool(media)
             and all(Path(p).is_file() for p in media.values())
         )
+        if complete and run.method == "alicfm" and run.config["data"]["name"] in ("gom", "beijing"):
+            manifest = read_json(run.output / "manifest.json")
+            complete = transport_w2_complete(read_json(run.output / "eval/metrics.json"),
+                                            manifest["dataset"]["heldout_indices"])
+            if not complete:
+                run.status, run.action, run.error = "pending", "evaluate", ""
+                return
         run.status = "complete" if complete else "blocked"
         run.error = "" if complete else state.get("error", "Incomplete output preserved; use a fresh output root for this preset")
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as error:

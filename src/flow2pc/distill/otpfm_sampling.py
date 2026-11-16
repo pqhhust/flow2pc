@@ -6,6 +6,7 @@ linear solve, exactly as in native forward_with_loss and the successful port.
 """
 
 import math
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -53,7 +54,7 @@ class ConditionalPath:
     """Historical W2Inf LU cache, also reusable for fresh independent tuples."""
 
     def __init__(self, model, alpha):
-        from flow2pc.pretrain.models.otpfm._source.lambdas import BoxLambda
+        from flow2pc.pretrain.models.otpfm._source.lambdas import BoxLambda, GaussianLambda
         from flow2pc.pretrain.models.otpfm._source.potentials import W2InfPotential
         from flow2pc.pretrain.models.otpfm._source.solvers import DirectSolver
 
@@ -69,6 +70,7 @@ class ConditionalPath:
         self.checked_endpoints = False
         self.condition_number = 1.0
         self.box_constants = None
+        self.gaussian_constants = None
         if self.k and all(type(p.lambda_fn) is BoxLambda for p in self.potentials):
             # Form scalar constants in Python, just as the native lambda does,
             # then cast once. Subtracting rounded float32 knots/widths instead
@@ -82,6 +84,25 @@ class ConditionalPath:
                     [fn.width for fn in lambdas],
                     [fn.double_integrated_at_1() for fn in lambdas],
                 )
+            )
+        if self.k and all(type(p.lambda_fn) is GaussianLambda for p in self.potentials):
+            lambdas = [p.lambda_fn for p in self.potentials]
+            knots, widths, z0, at_one = (
+                self.parameter.new_tensor(values).reshape(self.k, 1, 1)
+                for values in (
+                    [fn.tk for fn in lambdas],
+                    [fn.width for fn in lambdas],
+                    # Native z0 uses Python division BEFORE the dtype cast.
+                    [-fn.tk / fn.width for fn in lambdas],
+                    [fn.double_integrated_at_1() for fn in lambdas],
+                )
+            )
+            sqrt_two = self.parameter.new_tensor(2.0).sqrt()
+            sqrt_two_pi = self.parameter.new_tensor(2 * torch.pi).sqrt()
+            phi0 = 0.5 * (1.0 + torch.erf(z0 / sqrt_two))
+            pdf0 = torch.exp(-0.5 * z0 ** 2) / sqrt_two_pi
+            self.gaussian_constants = (
+                knots, widths, at_one, sqrt_two, sqrt_two_pi, phi0, pdf0,
             )
         if self.k:
             h = torch.stack([
@@ -129,6 +150,15 @@ class ConditionalPath:
         return cache
 
     def _time_factors(self, t, derivative):
+        if self.gaussian_constants is not None:
+            knots, widths, at_one, sqrt_two, sqrt_two_pi, phi0, pdf0 = self.gaussian_constants
+            time = t[None]
+            z = (time - knots) / widths
+            integrated = 0.5 * (1.0 + torch.erf(z / sqrt_two)) - phi0
+            pdf = torch.exp(-0.5 * z ** 2) / sqrt_two_pi
+            double_integrated = (time - knots) * integrated + widths * (pdf - pdf0)
+            return (double_integrated - at_one * time,
+                    integrated - at_one if derivative else None)
         if self.box_constants is None:
             h = torch.stack([self.model.x_time_dep(p, t) for p in self.potentials])
             j = (torch.stack([self.model.v_time_dep(p, t) for p in self.potentials])
@@ -156,7 +186,7 @@ class ConditionalPath:
         """Conditional derivative is diagnostic; it is never the student target."""
         t = times.reshape(-1, 1).to(cache["x0"])
         rows = rows.to(device=cache["x0"].device, dtype=torch.long)
-        if len(rows) != len(t) or not torch.isfinite(t).all() or (t < 0).any() or (t > 1).any():
+        if len(rows) != len(t) or not (torch.isfinite(t) & (t >= 0) & (t <= 1)).all():
             raise ValueError("One finite global time in [0,1] is required per tuple row")
         base = cache["base"][rows]
         values = cache["x0"][rows] + t * base
@@ -167,8 +197,10 @@ class ConditionalPath:
             values = values + self.alpha * (forces * h).sum(0)
             if derivative:
                 velocity = velocity + self.alpha * (forces * j).sum(0)
-        if (not torch.isfinite(values).all()
-                or (velocity is not None and not torch.isfinite(velocity).all())):
+        finite = torch.isfinite(values).all()
+        if velocity is not None:
+            finite = finite & torch.isfinite(velocity).all()
+        if not finite:
             raise FloatingPointError("Nonfinite OTP conditional path")
         return values, velocity
 
@@ -269,20 +301,23 @@ class OTPFMConditionalSampler:
         return self.caches[key]
 
     @torch.no_grad()
-    def sample_batch(self, pools, count, rng, *, validation=False):
-        if self.coupling == "native_ot":
-            cache = self._ot_cache(pools)
-            rows = torch.randint(len(cache["x0"]), (count,), generator=rng)
-        else:
-            if self.fresh_knot and not validation:
-                tuples = self.knot_means[None] + torch.randn(count, len(self.observed), self.dataset.dim, generator=rng) * self.dataset.params["noise_std"]
+    def sample_batch(self, pools, count, rng, *, validation=False, timer=None):
+        measure = timer.measure if timer is not None else lambda name: nullcontext()
+        with measure("query_sampling"):
+            if self.coupling == "native_ot":
+                cache = self._ot_cache(pools)
+                rows = torch.randint(len(cache["x0"]), (count,), generator=rng)
             else:
-                tuples = torch.stack([draw(pools[i], count, rng) for i in self.observed], 1)
-            cache = self.path.build_cache(tuples)
-            rows = torch.arange(count)
-        times = torch.rand(count, generator=rng).to(cache["x0"])
-        values, _ = self.path.sample_cache(cache, rows, times, derivative=False)
+                if self.fresh_knot and not validation:
+                    tuples = self.knot_means[None] + torch.randn(count, len(self.observed), self.dataset.dim, generator=rng) * self.dataset.params["noise_std"]
+                else:
+                    tuples = torch.stack([draw(pools[i], count, rng) for i in self.observed], 1)
+                cache = self.path.build_cache(tuples)
+                rows = torch.arange(count)
+            times = torch.rand(count, generator=rng).to(cache["x0"])
+            values, _ = self.path.sample_cache(cache, rows, times, derivative=False)
         # Crucially, use the learned diagonal EMA field, never the derivative
         # of an individual conditional tuple path as student supervision.
-        target = self.teacher.velocity(values, times)
+        with measure("teacher_target"):
+            target = self.teacher.velocity(values, times)
         return DistillationBatch(values, times, target_velocity=target)

@@ -15,6 +15,7 @@ import json
 import math
 import sys
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,8 @@ DATASETS = (*DEFAULT_DATASETS, "gom_w2", "gom_w2inf", "beijing_w2", "beijing_w2i
 DEFAULT_ALICFM_DATASETS = (
     "cite5", "cite50", "cite100", "multi5", "multi50", "multi100", "cell_tracking",
 )
+ALL_DATASETS = (*DEFAULT_DATASETS, "gom", "beijing", "arch", "sphere", "lidar")
+SELECTED_ROOT = Path("/data/lthung/flow2pc/distill")
 
 
 @dataclass
@@ -73,6 +76,24 @@ def scientific_config(config):
 def build_runs(args):
     runs = []
     method = getattr(args, "method", "otpfm")
+    if method == "both":
+        datasets = args.datasets or ALL_DATASETS
+        if set(datasets) - set(ALL_DATASETS):
+            raise ValueError("--method both uses dataset names gom/beijing, without recipe suffixes")
+        by_method = []
+        for name in ("alicfm", "otpfm"):
+            child = copy.copy(args)
+            child.method = name
+            child.datasets = [
+                f"{dataset}_w2" if name == "otpfm" and dataset in ("gom", "beijing") else dataset
+                for dataset in datasets
+            ]
+            child.output_root = selected_output_root(args, name)
+            if args.teacher_root is not None:
+                child.teacher_root = args.teacher_root / name
+            by_method.append(build_runs(child))
+        # One shared queue interleaves methods, with a single concurrency cap.
+        return [run for pair in zip(*by_method) for run in pair]
     defaults = DEFAULT_ALICFM_DATASETS if method == "alicfm" else DEFAULT_DATASETS
     for dataset in args.datasets or defaults:
         preset = ROOT / f"configs/distill/{method}/{method}_{dataset}_hclt.yaml"
@@ -82,12 +103,29 @@ def build_runs(args):
         expected_sampler = "teacher_interpolant" if method == "alicfm" else "otpfm_conditional"
         if config["distillation"]["sampler"]["name"] != expected_sampler:
             raise ValueError(f"Expected sampler {expected_sampler}: {preset}")
+        teacher_root = getattr(args, "teacher_root", None)
+        if teacher_root is not None and config["teacher"].get("format") != "legacy":
+            # Explicit launch-time teacher selection; keep every student and
+            # dataset protocol setting from the existing YAML unchanged.
+            directory = teacher_root.expanduser().resolve() / dataset
+            manifest = read_json(directory / "manifest.json")
+            if manifest.get("method") != method:
+                raise ValueError(f"Missing/incompatible teacher manifest: {directory}")
+            relative = Path(manifest["checkpoint_relpath"])
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("Teacher checkpoint path escapes its run directory")
+            config["teacher"].update(name=method, checkpoint=str(directory / relative))
         output = args.output_root / dataset / Path(config["output"]["dir"]).name
         config["output"]["dir"] = str(output)
         config["distillation"].update(device="cuda:0", resume=True)
         config["logging"].update(project="flow2pc", mode=args.mode)
         runs.append(Run(dataset, f"{method}-{dataset}-hclt-s{config['seed']}", config, output))
     return runs
+
+
+def selected_output_root(args, method):
+    return (getattr(args, f"{method}_output_root", None)
+            or SELECTED_ROOT / method / "selected-students").expanduser().resolve()
 
 
 def teacher_identity(config):
@@ -202,6 +240,7 @@ def summary(args, runs, active, state):
     rows = []
     for run in runs:
         row = {
+            "method": run.config["teacher"].get("name", "alicfm"),
             "dataset": run.dataset, "run": run.name, "status": run.status,
             "best_step": run.state.get("best_step"),
             "validation_velocity_mse": run.state.get("best_selection_score"),
@@ -235,9 +274,15 @@ def summary(args, runs, active, state):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--method", choices=("otpfm", "alicfm"), default="otpfm")
+    result.add_argument("--method", choices=("otpfm", "alicfm", "both"), default="otpfm")
     result.add_argument("--datasets", nargs="+", choices=DATASETS)
     result.add_argument("--output-root", type=Path)
+    result.add_argument("--teacher-root", type=Path,
+                        help="METHOD dataset-folder root, or parent of alicfm/otpfm for --method both; legacy presets retain their checkpoint")
+    result.add_argument("--alicfm-output-root", type=Path,
+                        help="ALI student output root for --method both (default: distill/alicfm/selected-students)")
+    result.add_argument("--otpfm-output-root", type=Path,
+                        help="OTP student output root for --method both (default: distill/otpfm/selected-students)")
     result.add_argument("--gpus", default="0,1,2,3,4,5,6,7")
     result.add_argument("--workers-per-gpu", type=int, default=2)
     result.add_argument("--max-parallel", type=int, default=16)
@@ -256,9 +301,10 @@ def main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     if args.datasets is None:
-        args.datasets = list(DEFAULT_ALICFM_DATASETS if args.method == "alicfm" else DEFAULT_DATASETS)
+        args.datasets = list(ALL_DATASETS if args.method == "both" else
+                             DEFAULT_ALICFM_DATASETS if args.method == "alicfm" else DEFAULT_DATASETS)
     if args.output_root is None:
-        args.output_root = Path("/data/lthung/flow2pc/distill") / args.method
+        args.output_root = SELECTED_ROOT / ("all-students" if args.method == "both" else args.method)
     if (len(args.datasets) != len(set(args.datasets))
             or min(args.workers_per_gpu, args.threads) < 1 or args.max_parallel < 2
             or args.worker_retries < 0
@@ -277,17 +323,28 @@ def main(argv=None):
             "controller_loaded_torch": "torch" in sys.modules,
             "counts": {name: sum(r.status == name for r in runs) for name in
                        ("pending", "complete", "blocked")},
-            "runs": [{"dataset": r.dataset, "status": r.status, "error": r.error,
+            "runs": [{"method": r.config["teacher"].get("name", "alicfm"),
+                      "dataset": r.dataset, "status": r.status, "error": r.error,
                       "output": str(r.output)} for r in runs],
         }, indent=2), flush=True)
         if args.dry_run:
             return 0
-        args.output_root.mkdir(parents=True, exist_ok=True)
-        with (args.output_root / ".distill.lock").open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                cli.error("Another distillation controller or its workers owns this output root")
+        roots = [args.output_root]
+        if args.method == "both":
+            roots.extend(selected_output_root(args, method) for method in ("alicfm", "otpfm"))
+        with ExitStack() as stack:
+            locks = []
+            for root in sorted(set(roots)):
+                root.mkdir(parents=True, exist_ok=True)
+                handle = stack.enter_context((root / ".distill.lock").open("a"))
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    cli.error(f"Another distillation controller or its workers owns {root}; let it finish before launching this batch")
+                locks.append(handle)
+            lock = locks[0]
+            # Workers retain ownership even if the controller exits unexpectedly.
+            args.worker_lock_fds = tuple(handle.fileno() for handle in locks[1:])
             # Recheck after acquiring ownership, before deciding what to launch.
             for run in runs:
                 inspect_run(run, args.retry_incomplete)

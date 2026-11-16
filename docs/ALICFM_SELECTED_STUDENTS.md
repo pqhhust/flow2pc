@@ -102,3 +102,26 @@ To create a separate experiment root, pass `--output-root PATH`.
 
 Only syntax/static checks and metadata-only dry runs were performed while
 preparing these files. Training, model evaluation, and tests were not executed.
+
+## Complete all 15 ALI-CFM students
+
+One local launch file covers every existing ALI-CFM distillation preset:
+
+```bash
+bash local_runs/distill_all_alicfm.sh --dry-run
+bash local_runs/distill_all_alicfm.sh
+```
+
+This includes the six CITE/Multi profiles, EB, ST, knot, tracking, GOM, Beijing,
+Arch, Sphere, and LiDAR. It selects framework teachers from
+`/data/lthung/flow2pc/pretrained-teachers/alicfm/DATASET/` through the explicit
+`--teacher-root` option. Tracking retains its declared successful legacy teacher.
+The seven completed students above are reused at the same output paths; the
+other eight are queued with their existing YAML student settings and budgets.
+Only the seven historical winners have tuned settings recorded here; the
+remaining presets are not relabeled as sweep winners.
+
+The queue uses the same eight-GPU pool, W&B project `flow2pc`, final images,
+and output root. Resolved per-run configs, including the selected teacher paths,
+are saved under `_configs/` and in `distillation_plan.json`. Neither teacher
+optimization nor UQ evaluation is part of this command.
