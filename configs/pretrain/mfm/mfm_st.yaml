@@ -18,7 +18,7 @@ model:
       activation_geopath: selu
       activation_flow: selu
       time_geopath: true
-      sigma: 0.1
+      sigma: 0.01
       optimal_transport_method: exact
       velocity_metric: land
       gamma_current: 0.125
