@@ -45,5 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/gaussian_quickstart/default
 wandb:
+  group: gaussian_quickstart
   project: flow2pc
   mode: online

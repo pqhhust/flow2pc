@@ -32,9 +32,10 @@ model:
       flow_weight_decay: 1.0e-05
 data:
   name: mfm_snapshots
-  root: data/st/seed42
+  root: data/ali_protocol/st/seed42
   params:
     profile: st
+    st_native_root: /data/lthung/ali-cfm-data
 training:
   epochs: 1000
   batch_size: 128
@@ -45,5 +46,19 @@ training:
 output:
   dir: outputs/pretrain/mfm/st/default
 wandb:
+  group: st-mfm
   project: flow2pc
   mode: online
+evaluation:
+  enabled: true
+  num_samples: 0
+  metric_samples: 512
+  batch_size: 64
+  seed: 2026
+  solver: rk4
+  tolerance: 1.0e-05
+  ode_steps: 100
+  max_nfe: 50000
+  metric_space: historical
+  source_split: all
+  reference_split: all

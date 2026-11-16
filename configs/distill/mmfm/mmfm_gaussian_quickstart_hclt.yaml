@@ -5,7 +5,7 @@ teacher:
   checkpoint: outputs/mmfm/gaussian_quickstart/pretrain/checkpoints/best.pt
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/gaussian_quickstart/seed42
+  root: data/gaussian_quickstart/seed42
 student:
   name: hclt
   params: {}

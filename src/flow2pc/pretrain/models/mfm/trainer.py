@@ -111,14 +111,11 @@ def prepare(config):
         "flow2pc.pretrain.models.mfm._source.mfm.train.main"
         if source == MFM_LOCAL_ROOT.resolve() else "mfm.train.main"
     )
-    source_groups = {
-        "arch": "arch_ot-mfm",
-        "sphere": "sphere_mfm",
-        "lidar": "lidar_mfm",
-    }
+    group = (f"{data['name']}{native['dim']}" if data["name"] in ("cite", "multi")
+             else "eb_pca5" if data["name"] == "eb" and native["dim"] == 5
+             else data["name"])
     command = [sys.executable, "-m", module, "--config_path", str(native_config)]
-    if data["name"] in source_groups:
-        command.extend(("--wandb_group", source_groups[data["name"]]))
+    command.extend(("--wandb_group", group))
     command.extend(("--working_dir", str(output_dir)))
     return {
         "method": "mfm", "source_root": str(source), "data_root": str(data_root),
@@ -169,6 +166,11 @@ def run(resolved):
 
         resolved = reserve_snapshot_output(resolved)
         output = run_snapshots(resolved)
+        shared_st = "evaluation" in resolved["config"]
+        if shared_st and not resolved["config"]["evaluation"]["enabled"]:
+            return output
+        if shared_st:
+            from flow2pc.pretrain.models.mfm.st_ali_evaluation import evaluate_run, publish as publish_wandb
         try:
             report = evaluate_run(output, device=resolved["config"]["training"]["device"])
         except Exception as error:

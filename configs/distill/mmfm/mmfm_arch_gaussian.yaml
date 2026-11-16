@@ -5,7 +5,7 @@ teacher:
   checkpoint: outputs/mmfm/arch/pretrain/checkpoints/best.pt
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/arch/seed42
+  root: data/arch/seed42
 student:
   name: gaussian
   params: {}
