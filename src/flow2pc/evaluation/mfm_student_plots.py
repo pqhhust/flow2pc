@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 import matplotlib
 
@@ -20,12 +15,15 @@ import torch
 
 from flow2pc.data.metric_common import seeded
 from flow2pc.data.metric_registry import load_dataset
-from flow2pc.distill.student import build_student_from_config
 from flow2pc.utils.mfm_source import fingerprint, source_module
 
 
 @torch.no_grad()
-def export(checkpoint_path: Path, device: torch.device):
+def export(checkpoint_path: Path, device: torch.device, build_student):
+    """Render the saved student using the original MFM plotting protocol.
+
+    ``build_student`` restores a student from its saved model configuration.
+    """
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if checkpoint.get("model_type") != "metric_pc_distill":
         raise ValueError(f"Not an MFM student checkpoint: {checkpoint_path}")
@@ -75,7 +73,7 @@ def export(checkpoint_path: Path, device: torch.device):
         source_indices = rng.choice(len(source), count, replace=False)
         target_indices = rng.choice(len(target), count, replace=False)
         endpoints = [source[source_indices], target[target_indices]]
-    student = build_student_from_config(checkpoint["model_config"]).to(device)
+    student = build_student(checkpoint["model_config"]).to(device)
     student.load_state_dict(checkpoint["state_dict"])
     student.eval()
     x = endpoints[0].to(device)
@@ -151,26 +149,3 @@ def export(checkpoint_path: Path, device: torch.device):
     return len(names)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT / "outputs/tuning/mfm")
-    parser.add_argument("--datasets", nargs="+", choices=("arch", "sphere", "lidar"), default=["arch", "sphere", "lidar"])
-    parser.add_argument("--checkpoint", choices=("best", "last"), default="best")
-    parser.add_argument("--device", default="cpu")
-    args = parser.parse_args()
-    torch.set_num_threads(2)
-    checkpoints = [
-        path for name in args.datasets
-        for path in sorted((args.root / name).glob(f"*/runs/*/checkpoints/{args.checkpoint}.pt"))
-    ]
-    if not checkpoints:
-        parser.error(f"No matching checkpoints under {args.root}")
-    print(f"Rendering {len(checkpoints)} runs on {args.device}", flush=True)
-    total = 0
-    for checkpoint in checkpoints:
-        total += export(checkpoint, torch.device(args.device))
-    print(f"Done: {total} images across {len(checkpoints)} runs", flush=True)
-
-
-if __name__ == "__main__":
-    main()

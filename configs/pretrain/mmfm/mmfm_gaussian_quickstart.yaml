@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/gaussian_quickstart/seed42
+  root: data/gaussian_quickstart/seed42
   params:
     profile: gaussian_quickstart
 training:

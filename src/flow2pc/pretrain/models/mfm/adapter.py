@@ -15,6 +15,11 @@ class MetricVelocity(nn.Module):
         self.sample_shape = tuple(shape)
 
     def forward(self, time, values):
+        parameter = next(self.network.parameters(), None)
+        if parameter is not None and (
+            values.device != parameter.device or values.dtype != parameter.dtype
+        ):
+            raise ValueError("Input device and dtype must match the loaded MFM teacher")
         shape = values.shape
         if tuple(shape[1:]) not in (self.sample_shape, (math.prod(self.sample_shape),)):
             raise ValueError(

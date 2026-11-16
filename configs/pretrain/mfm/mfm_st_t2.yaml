@@ -1,0 +1,65 @@
+# Snapshot protocol v1; native parameter starting point: ../pretrain/metric-flow-matching/configs/single_cell/5dims/ot-mfm_eb.yaml
+# New adaptations are not claims of published reproduction.
+stage: pretrain
+seed: 42
+model:
+  name: mfm
+  params:
+    backend: snapshots
+    native:
+      hidden_dims_geopath:
+      - 64
+      - 64
+      - 64
+      hidden_dims_flow:
+      - 64
+      - 64
+      - 64
+      activation_geopath: selu
+      activation_flow: selu
+      time_geopath: true
+      sigma: 0.1
+      optimal_transport_method: exact
+      velocity_metric: land
+      gamma_current: 0.125
+      rho: 0.001
+      alpha_metric: 2
+      geopath_optimizer: adam
+      geopath_lr: 0.0001
+      geopath_weight_decay: 1.0e-05
+      flow_optimizer: adamw
+      flow_lr: 0.001
+      flow_weight_decay: 1.0e-05
+data:
+  name: mfm_snapshots
+  root: data/ali_protocol_st_holdout_t4/st/seed42
+  params:
+    profile: st
+    st_native_root: /data/lthung/ali-cfm-data
+    st_heldout_index: 2
+training:
+  epochs: 1000
+  batch_size: 128
+  device: cuda:0
+  patience_geopath: 20
+  patience_flow: 20
+  validate_every: 1
+output:
+  dir: outputs/pretrain/mfm/st_t2/default
+wandb:
+  group: st-mfm
+  project: flow2pc
+  mode: online
+evaluation:
+  enabled: true
+  num_samples: 0
+  metric_samples: 512
+  batch_size: 64
+  seed: 2026
+  solver: rk4
+  tolerance: 1.0e-05
+  ode_steps: 100
+  max_nfe: 50000
+  metric_space: historical
+  source_split: all
+  reference_split: all

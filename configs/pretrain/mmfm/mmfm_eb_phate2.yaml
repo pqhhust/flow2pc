@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/eb_phate2/seed42
+  root: data/eb_phate2/seed42
   params:
     profile: eb_phate2
 training:

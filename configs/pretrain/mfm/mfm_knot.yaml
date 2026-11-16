@@ -32,18 +32,19 @@ model:
       flow_weight_decay: 1.0e-05
 data:
   name: mfm_snapshots
-  root: data/knot/seed42
+  root: data/knot_240/knot/seed42
   params:
     profile: knot
 training:
   epochs: 1000
   batch_size: 128
   device: cuda:0
-  patience_geopath: 5
-  patience_flow: 5
+  patience_geopath: 20
+  patience_flow: 20
   validate_every: 1
 output:
   dir: outputs/pretrain/mfm/knot/default
 wandb:
   project: flow2pc
   mode: online
+  group: knot-mfm

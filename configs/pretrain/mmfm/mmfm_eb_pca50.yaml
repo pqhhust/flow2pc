@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/eb_pca50/seed42
+  root: data/eb_pca50/seed42
   params:
     profile: eb_pca50
 training:
