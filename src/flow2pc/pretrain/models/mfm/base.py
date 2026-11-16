@@ -14,11 +14,11 @@ class LoadedTeacher:
     matcher_factory: Any = None
     path_sampler: Any = None
 
-    def velocity(self, values, time, condition=None):
+    def velocity(self, values, time, *, context=None):
         if self.conditional:
-            if condition is None:
-                raise ValueError("This teacher requires condition")
-            return self.model(time, values, condition)
-        if condition is not None:
-            raise ValueError("This teacher does not accept condition")
+            if context is None:
+                raise ValueError("This teacher requires context")
+            return self.model(time, values, context)
+        if context is not None:
+            raise ValueError("This teacher does not accept context")
         return self.model(time, values)

@@ -47,4 +47,4 @@ output:
 wandb:
   project: flow2pc
   mode: online
-  group: knot
+  group: knot-mfm

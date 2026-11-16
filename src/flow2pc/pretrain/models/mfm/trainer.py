@@ -64,7 +64,10 @@ def prepare(config):
 
         config = copy.deepcopy(config)
         config["model"]["params"].setdefault("source_root", str(MFM_LOCAL_ROOT))
-        return prepare_snapshots(config)
+        resolved = prepare_snapshots(config)
+        prepared = resolved["config"]
+        prepared["wandb"]["group"] = f"{prepared['data']['params']['profile']}-mfm"
+        return resolved
     _mapping(config, "MFM config", {"stage", "model", "data", "training", "seed", "output"},
              {"stage", "model", "data", "training", "output"})
     model = _mapping(config["model"], "model", {"name", "params"}, {"name"})
@@ -111,9 +114,7 @@ def prepare(config):
         "flow2pc.pretrain.models.mfm._source.mfm.train.main"
         if source == MFM_LOCAL_ROOT.resolve() else "mfm.train.main"
     )
-    group = (f"{data['name']}{native['dim']}" if data["name"] in ("cite", "multi")
-             else "eb_pca5" if data["name"] == "eb" and native["dim"] == 5
-             else data["name"])
+    group = f"{data['name']}-mfm"
     command = [sys.executable, "-m", module, "--config_path", str(native_config)]
     command.extend(("--wandb_group", group))
     command.extend(("--working_dir", str(output_dir)))

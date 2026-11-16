@@ -45,6 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/gaussian_cli_defaults/default
 wandb:
-  group: gaussian_cli_defaults
+  group: gaussian_cli_defaults-mfm
   project: flow2pc
   mode: online

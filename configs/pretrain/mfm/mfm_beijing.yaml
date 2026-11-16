@@ -45,6 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/beijing/default
 wandb:
-  group: beijing
+  group: beijing-mfm
   project: flow2pc
   mode: online

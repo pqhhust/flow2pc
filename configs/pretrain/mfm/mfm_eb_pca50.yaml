@@ -45,6 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/eb_pca50/default
 wandb:
-  group: eb_pca50
+  group: eb_pca50-mfm
   project: flow2pc
   mode: online

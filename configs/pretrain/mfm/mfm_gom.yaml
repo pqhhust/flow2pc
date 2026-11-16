@@ -45,6 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/gom/default
 wandb:
-  group: gom
+  group: gom-mfm
   project: flow2pc
   mode: online

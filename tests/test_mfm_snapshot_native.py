@@ -12,6 +12,23 @@ from flow2pc.pretrain.models.mfm import snapshot_native, snapshots
 from flow2pc.utils.mfm_source import fingerprint
 
 
+@pytest.mark.parametrize("group", [None, "old-group"])
+def test_snapshot_tracking_uses_profile_group(tmp_path, group):
+    import yaml
+    from flow2pc.pretrain.models.mfm.trainer import prepare
+
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "configs/pretrain/mfm/snapshots/mfm_arch.yaml").read_text())
+    source = tmp_path / "source"
+    target = source / "mfm/flow_matchers/models/mfm.py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    config["model"]["params"]["source_root"] = str(source)
+    config["wandb"]["group"] = group
+    resolved = prepare(config)
+    assert resolved["config"]["wandb"]["group"] == "arch-mfm"
+
+
 def test_image_networks_use_upstream_constructor_settings(monkeypatch):
     from flow2pc.pretrain.models.mfm import model
 

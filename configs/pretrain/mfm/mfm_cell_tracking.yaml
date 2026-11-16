@@ -45,6 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/cell_tracking/default
 wandb:
-  group: cell_tracking
+  group: cell_tracking-mfm
   project: flow2pc
   mode: online
