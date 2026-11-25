@@ -1,16 +1,19 @@
-# Frozen selected synthetic teacher; existing HCLT training and velocity MSE only.
-# Reserved endpoint rows select the student; middle-time populations remain test data.
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/arch/best_config.yaml
+# Selected best.pt step: 20000; validation score: 1.81730767963e-05.
+# Retains the winning run output directory and its saved evaluation protocol.
 stage: distill
 seed: 0
 teacher:
   name: otpfm
   data_root: /data/pqhung_group/pdtung/flow2pc/data/arch/seed42
-  checkpoint: /data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/arch/arch-otpfm-c002-h256-l2-lr0.0001-imf-b64-s42-1d71e840a7f8/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/arch/checkpoints/last.pt
+  format: framework
 student:
   name: hclt
   params:
-    num_latents: 128
-    time_embedding_dim: 32
+    num_latents: 256
+    time_embedding_dim: 128
     time_feature_seed: 0
 distillation:
   sampler:
@@ -19,7 +22,7 @@ distillation:
   device: cuda:0
   steps: 20000
   batch_size: 64
-  lr: 0.001
+  lr: 0.003
   validate_every: 1000
   checkpoint_every: 1000
   log_every: 100
@@ -30,9 +33,9 @@ distillation:
 logging:
   mode: online
   project: flow2pc
-  name: arch-otpfm-hclt-h128-f32-lr0.001-b64-s0
+  name: arch-otpfm-hclt-h256-f128-lr0.003-b64-n20000-s0-131df7b5af6e
 output:
-  dir: /data/lthung/flow2pc/distill/otpfm/arch/hclt-best-teacher-seed0
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/arch/arch-otpfm-hclt-h256-f128-lr0.003-b64-n20000-s0-131df7b5af6e
 evaluation:
   enabled: true
   num_samples: 512

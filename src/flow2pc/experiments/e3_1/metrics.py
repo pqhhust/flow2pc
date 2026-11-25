@@ -61,6 +61,59 @@ def energy_score(real, generated, independent, chunk=256):
     return float((attraction - 0.5 * repulsion).mean())
 
 
+def distribution_fidelity(teacher, student, levels):
+    """Full-state diagnostics on paired initial-particle pushforwards, not real trajectories."""
+    teacher, student = map(finite_matrix, (teacher, student))
+    if teacher.shape != student.shape:
+        raise ValueError("Fidelity requires the same initial-particle bank and state dimension")
+    teacher_centered, student_centered = teacher - teacher.mean(0), student - student.mean(0)
+    teacher_cov = teacher_centered.T @ teacher_centered / len(teacher)
+    student_cov = student_centered.T @ student_centered / len(student)
+    covariance_norm = float(np.linalg.norm(teacher_cov))
+    shared = {
+        "paired_ode_rmse": float(np.sqrt(np.mean((student - teacher) ** 2))),
+        "mean_shift_l2": float(np.linalg.norm(student.mean(0) - teacher.mean(0))),
+        "relative_covariance_error": (float(np.linalg.norm(student_cov - teacher_cov)) / covariance_norm
+                                      if covariance_norm > 0 else None),
+    }
+    rows = []
+    for level in levels:
+        quantiles = [(1 - level) / 2, (1 + level) / 2]
+        teacher_bounds, student_bounds = np.quantile(teacher, quantiles, axis=0), np.quantile(student, quantiles, axis=0)
+        teacher_width, student_width = teacher_bounds[1] - teacher_bounds[0], student_bounds[1] - student_bounds[0]
+        total_width = float(teacher_width.sum())
+        rows.append({"nominal_alpha": level, **shared,
+                     "mean_interval_width_ratio": (float(np.mean(student_width / teacher_width))
+                                                   if np.all(teacher_width > 0) else None),
+                     "relative_interval_width_error": (float(np.abs(student_width - teacher_width).sum()) / total_width
+                                                       if total_width > 0 else None)})
+    return rows
+
+
+def region_fidelity(teacher_estimator, student_estimator, teacher_draws, student_draws,
+                    teacher_regions, student_regions):
+    """Mass on independent model banks; separates teacher fidelity from truth coverage."""
+    teacher_thresholds = {r["nominal_alpha"]: r["log_density_threshold"] for r in teacher_regions}
+    student_thresholds = {r["nominal_alpha"]: r["log_density_threshold"] for r in student_regions}
+    if teacher_thresholds.keys() != student_thresholds.keys():
+        raise ValueError("Teacher and student region levels differ")
+    tt, ts = teacher_estimator.score(teacher_draws), teacher_estimator.score(student_draws)
+    st, ss = student_estimator.score(teacher_draws), student_estimator.score(student_draws)
+    rows = []
+    for level, threshold in teacher_thresholds.items():
+        student_threshold = student_thresholds[level]
+        teacher_self, student_in_teacher = float(np.mean(tt >= threshold)), float(np.mean(ts >= threshold))
+        student_self, teacher_in_student = float(np.mean(ss >= student_threshold)), float(np.mean(st >= student_threshold))
+        rows.append({"nominal_alpha": level,
+                     "teacher_region_teacher_mass": teacher_self,
+                     "teacher_region_student_mass": student_in_teacher,
+                     "student_region_student_mass": student_self,
+                     "student_region_teacher_mass": teacher_in_student,
+                     "teacher_region_mass_gap": student_in_teacher - teacher_self,
+                     "student_region_mass_gap": teacher_in_student - student_self})
+    return rows
+
+
 class EstimatedHDR:
     def __init__(self, fit, tune, multipliers, chunk=256, bandwidth_scale="unit"):
         from sklearn.neighbors import KernelDensity
@@ -86,6 +139,8 @@ class EstimatedHDR:
         index = max(range(len(models)), key=lambda i: self.search[i]["validation_model_log_score"])
         self.model = models[index]
         self.bandwidth = self.search[index]["bandwidth"]
+        self.selected_index = index
+        self.at_search_boundary = index in (0, len(models) - 1)
 
     def _score(self, model, values):
         scores = np.concatenate([model.score_samples(values[i:i + self.chunk])

@@ -2,7 +2,10 @@
 
 from importlib import import_module
 
-EXPERIMENTS = {"e3_1": "flow2pc.experiments.e3_1"}
+EXPERIMENTS = {
+    "e3_1": "flow2pc.experiments.e3_1",
+    "e3_2": "flow2pc.experiments.e3_2",
+}
 
 
 def run(config):

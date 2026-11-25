@@ -1,15 +1,18 @@
-# Frozen selected OTP teacher; existing HCLT training and velocity MSE only.
-# OTP conditional tuple sampling; original coupling/alpha come from the checkpoint.
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/cite5/best_config.yaml
+# Selected best.pt step: 20000; validation score: 0.000700553157367.
+# Retains the winning run output directory and its saved evaluation protocol.
 stage: distill
 seed: 0
 teacher:
   name: otpfm
-  checkpoint: /data/lthung/flow2pc/otp-fm/ali-data-sweep-100/cite5/cite5-c003-h512-l6-lr0.001-b256-w1000-tau0.25-gaussian-imf-s42-5d910a9fb852/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/cite5/checkpoints/last.pt
+  format: framework
 student:
   name: hclt
   params:
-    num_latents: 128
-    time_embedding_dim: 32
+    num_latents: 256
+    time_embedding_dim: 64
     time_feature_seed: 0
 distillation:
   sampler:
@@ -18,7 +21,7 @@ distillation:
   device: cuda:0
   steps: 20000
   batch_size: 64
-  lr: 0.001
+  lr: 0.003
   validate_every: 1000
   checkpoint_every: 1000
   log_every: 100
@@ -29,9 +32,9 @@ distillation:
 logging:
   mode: online
   project: flow2pc
-  name: cite5-otpfm-hclt-h128-f32-lr0.001-b64-s0
+  name: cite5-otpfm-hclt-h256-f64-lr0.003-b64-n20000-s0-66d6f9a65faf
 output:
-  dir: /data/lthung/flow2pc/distill/otpfm/cite5/hclt-teacher-s0
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/cite5/cite5-otpfm-hclt-h256-f64-lr0.003-b64-n20000-s0-66d6f9a65faf
 evaluation:
   enabled: true
   num_samples: 2048

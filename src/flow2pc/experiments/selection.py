@@ -1,4 +1,4 @@
-"""Select one evaluated student per frozen teacher using comparable saved EMD."""
+"""Select one evaluated student per frozen teacher using a declared saved score."""
 
 import hashlib
 import json
@@ -58,6 +58,22 @@ def teacher_contract(source):
     return manifest, None
 
 
+def validation_contract(binding):
+    """Compare validation queries, never capacity/LR or population EMD settings."""
+    settings = binding.get("settings")
+    if not isinstance(settings, dict) or not binding.get("dataset") or binding.get("seed") is None:
+        raise ValueError("Missing saved dataset/seed/validation settings for MSE selection")
+    return {
+        "dataset": identity(binding["dataset"]), "seed": binding["seed"],
+        "sampler": binding.get("sampler"),
+        "temporal_validation": binding.get("validation_protocol"),
+        "validation_scope": settings.get("validation_scope", "dataset"),
+        "validation_batches": settings.get("validation_batches", 4),
+        "validation_batch_size": settings.get("validation_batch_size", 128),
+        "teacher_path_particles": settings.get("teacher_path_particles", 128),
+    }
+
+
 def select_student(config):
     """Metadata only. Weight hashes/bindings are checked again in the worker."""
     source = config["teacher"]
@@ -90,29 +106,32 @@ def select_student(config):
                        for key, value in item.items()):
                     raise ValueError("Saved teacher/student ODE evaluation has numerical errors")
             if report.get("checkpoint_step") != state.get("best_step") or state.get("best_step") is None:
-                raise ValueError("EMD report does not describe the saved selected checkpoint")
+                raise ValueError("Population report does not describe the saved selected checkpoint")
             checkpoint = directory / "checkpoints/best.pt"
             if not checkpoint.is_file() or not (directory / "resolved_config.yaml").is_file():
                 raise ValueError("Missing selected weights/resolved configuration")
             metric = config["selection"]["metric"]
             if metric == "auto":
                 metric = "student_ode_emd_heldout" if report.get("heldout_indices") else "student_ode_emd_mean"
-            score = report.get(metric)
-            if type(score) not in (int, float) or not math.isfinite(score):
+            mse_selection = metric == "validation_selection_score"
+            score = state.get("best_selection_score") if mse_selection else report.get(metric)
+            if type(score) not in (int, float) or not math.isfinite(score) or score < 0:
                 raise ValueError(f"Missing finite saved {metric}")
-            protocol = {"space": report.get("space"), "protocol": report.get("protocol"),
-                        "heldout_indices": report.get("heldout_indices"), "metric": metric}
+            protocol = ({"metric": metric, "validation": validation_contract(binding)} if mse_selection else
+                        {"space": report.get("space"), "protocol": report.get("protocol"),
+                         "heldout_indices": report.get("heldout_indices"), "metric": metric})
+            reference_metric = "teacher_ode_emd_heldout" if report.get("heldout_indices") else "teacher_ode_emd_mean"
             candidates.append({"checkpoint": str(checkpoint), "run_dir": str(directory),
                                "score": score, "metric": metric, "checkpoint_step": state["best_step"],
-                               "teacher_emd": report.get(metric.replace("student_", "teacher_", 1)),
+                               "teacher_emd": report.get(reference_metric if mse_selection else metric.replace("student_", "teacher_", 1)),
                                "protocol": protocol, "binding_sha256": binding.get("binding_sha256")})
         except (ValueError, KeyError, TypeError, OSError) as error:
             rejected.append({"run_dir": str(directory), "reason": str(error)})
     if not candidates:
-        raise ValueError(f"No completed, teacher-matched EMD candidate for {source['name']}/{config['dataset']}; "
+        raise ValueError(f"No completed, teacher-matched candidate for {source['name']}/{config['dataset']}; "
                          f"rejections: {rejected[:3]}")
     if len({identity(c["protocol"]) for c in candidates}) != 1:
-        raise ValueError("Candidate EMD protocols/units differ; narrow selection.student_roots to a comparable cohort")
+        raise ValueError("Candidate validation or EMD protocols/units differ; narrow selection.student_roots to a comparable cohort")
     pinned = config["selection"].get("pinned_checkpoint")
     if pinned is not None:
         matches = [c for c in candidates if Path(c["checkpoint"]).resolve() == Path(pinned).resolve()]
@@ -121,8 +140,18 @@ def select_student(config):
         chosen = matches[0]
     else:
         chosen = min(candidates, key=lambda c: (c["score"], c["checkpoint"]))
+    mse_selection = chosen["metric"] == "validation_selection_score"
+    progress = []
+    for root in roots:
+        saved = read_json(root / "selected_student.json")
+        if saved.get("teacher_sha256") == teacher["checkpoint_sha256"] and type(saved.get("planned")) is int:
+            progress.append({"root": str(root), "planned": saved["planned"],
+                             "eligible_completed": sum(Path(c["run_dir"]).is_relative_to(root) for c in candidates)})
+    final = (all(p["eligible_completed"] == p["planned"] for p in progress) if progress else None)
     return {**chosen, "teacher_sha256": teacher["checkpoint_sha256"],
             "candidate_count": len(candidates), "candidates": candidates, "rejected": rejected,
-            "across_runs_selection": "lowest saved student ODE W1 EMD, for this exact teacher",
+            "selection_cohorts": progress, "selection_final": final,
+            "across_runs_selection": ("lowest saved validation velocity-MSE selection score, for this exact teacher"
+                                      if mse_selection else "lowest saved student ODE W1 EMD, for this exact teacher"),
             "within_run_selection": "existing best.pt chosen by validation velocity MSE; no weights changed",
             "data_reuse": "retrospective evaluation; selection populations are not claimed to be untouched test data"}

@@ -161,62 +161,70 @@ def summary(args, runs, active, state):
     })
 
 
-def main(argv=None):
-    cli = parser()
-    args = cli.parse_args(argv)
+def execute(args, runs, *, report=summary, details=None):
+    """Shared metadata preview and worker queue for student sweep controllers."""
     if (min(args.workers_per_gpu, args.threads) < 1 or args.max_parallel < 2
             or args.worker_retries < 0
             or any(not math.isfinite(v) or v <= 0
                    for v in (args.min_free_gb, args.min_disk_free_gb))):
-        cli.error("Invalid parallel resource settings")
+        raise ValueError("Invalid parallel resource settings")
+    args.output_root = args.output_root.expanduser().resolve()
+    for run in runs:
+        batch.inspect_run(run, args.retry_incomplete)
+    blocked = Counter((run.dataset, run.error) for run in runs if run.status == "blocked")
+    print(json.dumps({
+        "dry_run": args.dry_run, "stage": "distill", "teacher_training": False,
+        "total": len(runs), "runs_per_dataset": dict(Counter(run.dataset for run in runs)),
+        "grid": {"num_latents": args.latents, "time_features": args.time_features,
+                 "learning_rates": args.learning_rates},
+        "teachers": {run.dataset: run.config["teacher"]["checkpoint"] for run in runs},
+        "selection": "validation_velocity_MSE_only",
+        "gpus": args.gpus, "max_parallel": args.max_parallel,
+        "workers_per_gpu": args.workers_per_gpu, "min_free_gb": args.min_free_gb,
+        "output_root": str(args.output_root), "wandb_project": "flow2pc",
+        "controller_loaded_torch": "torch" in sys.modules,
+        "counts": {name: sum(run.status == name for run in runs)
+                   for name in ("pending", "complete", "blocked")},
+        "blocked": [{"dataset": dataset, "error": error, "runs": count}
+                    for (dataset, error), count in blocked.items()],
+        "preview": [run.name for run in runs[:6]],
+        **(details or {}),
+    }, indent=2), flush=True)
+    if args.dry_run:
+        return 0
+    args.output_root.mkdir(parents=True, exist_ok=True)
+    with (args.output_root / ".distill.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("Another distillation controller or its workers owns this sweep root") from error
+        for run in runs:
+            batch.inspect_run(run, args.retry_incomplete)
+        if args.summarize_only or not any(run.status == "pending" for run in runs):
+            failed = any(run.status == "blocked" for run in runs)
+            report(args, runs, [], "summary_only" if args.summarize_only else "failed" if failed else "complete")
+            return int(failed)
+        devices = batch.selected_devices(args.gpus, batch.gpu_inventory())
+        args.max_parallel = min(args.max_parallel, len(devices) * args.workers_per_gpu)
+        batch.atomic_json(args.output_root / "distillation_plan.json", {
+            "teacher_training": False, "selection": "validation_velocity_MSE_only",
+            "runs": [{"dataset": run.dataset, "name": run.name, "config": run.config}
+                     for run in runs],
+            **(details or {}),
+        })
+        return batch.DistillationQueue(
+            args, runs, repo=ROOT, inventory=batch.gpu_inventory,
+            inspect=batch.inspect_run, report=report, archive=batch.archive_incomplete,
+        ).run(devices, lock)
+
+
+def main(argv=None):
+    cli = parser()
+    args = cli.parse_args(argv)
     args.output_root = args.output_root.expanduser().resolve()
     try:
         runs = build_runs(args)
-        for run in runs:
-            batch.inspect_run(run, args.retry_incomplete)
-        blocked = Counter((run.dataset, run.error) for run in runs if run.status == "blocked")
-        print(json.dumps({
-            "dry_run": args.dry_run, "stage": "distill", "teacher_training": False,
-            "total": len(runs), "runs_per_dataset": dict(Counter(run.dataset for run in runs)),
-            "grid": {"num_latents": args.latents, "time_features": args.time_features,
-                     "learning_rates": args.learning_rates},
-            "teachers": {run.dataset: run.config["teacher"]["checkpoint"] for run in runs},
-            "selection": "validation_velocity_MSE_only",
-            "gpus": args.gpus, "max_parallel": args.max_parallel,
-            "workers_per_gpu": args.workers_per_gpu, "min_free_gb": args.min_free_gb,
-            "output_root": str(args.output_root), "wandb_project": "flow2pc",
-            "controller_loaded_torch": "torch" in sys.modules,
-            "counts": {name: sum(run.status == name for run in runs)
-                       for name in ("pending", "complete", "blocked")},
-            "blocked": [{"dataset": dataset, "error": error, "runs": count}
-                        for (dataset, error), count in blocked.items()],
-            "preview": [run.name for run in runs[:6]],
-        }, indent=2), flush=True)
-        if args.dry_run:
-            return 0
-        args.output_root.mkdir(parents=True, exist_ok=True)
-        with (args.output_root / ".distill.lock").open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                cli.error("Another distillation controller or its workers owns this sweep root")
-            for run in runs:
-                batch.inspect_run(run, args.retry_incomplete)
-            if args.summarize_only or not any(run.status == "pending" for run in runs):
-                failed = any(run.status == "blocked" for run in runs)
-                summary(args, runs, [], "summary_only" if args.summarize_only else "failed" if failed else "complete")
-                return int(failed)
-            devices = batch.selected_devices(args.gpus, batch.gpu_inventory())
-            args.max_parallel = min(args.max_parallel, len(devices) * args.workers_per_gpu)
-            batch.atomic_json(args.output_root / "distillation_plan.json", {
-                "teacher_training": False, "selection": "validation_velocity_MSE_only",
-                "runs": [{"dataset": run.dataset, "name": run.name, "config": run.config}
-                         for run in runs],
-            })
-            return batch.DistillationQueue(
-                args, runs, repo=ROOT, inventory=batch.gpu_inventory,
-                inspect=batch.inspect_run, report=summary, archive=batch.archive_incomplete,
-            ).run(devices, lock)
+        return execute(args, runs)
     except (ValueError, OSError, RuntimeError, yaml.YAMLError) as error:
         cli.error(str(error))
 

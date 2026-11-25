@@ -21,7 +21,7 @@ def resolve(raw, base):
         "name", "checkpoint", "legacy_metadata", "generator_checkpoint", "data_root",
     }, {"name", "checkpoint"})
     if teacher["name"] not in ("alicfm", "otpfm"):
-        raise ValueError("E3.1 currently supports ALI-CFM and OTP-FM")
+        raise ValueError("Experiments currently support ALI-CFM and OTP-FM")
     for key in ("checkpoint", "legacy_metadata", "generator_checkpoint", "data_root"):
         if key in teacher:
             teacher[key] = resolve_path(teacher[key], base, f"teacher.{key}")
@@ -35,9 +35,9 @@ def resolve(raw, base):
     if "pinned_checkpoint" in selection:
         selection["pinned_checkpoint"] = resolve_path(selection["pinned_checkpoint"], base, "selection.pinned_checkpoint")
     if selection.setdefault("metric", "auto") not in (
-        "auto", "student_ode_emd_heldout", "student_ode_emd_mean",
+        "auto", "student_ode_emd_heldout", "student_ode_emd_mean", "validation_selection_score",
     ):
-        raise ValueError("Select by saved student ODE W1 EMD, never direct-PC EMD")
+        raise ValueError("Select by saved validation_selection_score or student ODE W1 EMD")
     raw.setdefault("device", "cpu")
     if not isinstance(raw["device"], str):
         raise ValueError("device must be a device string")

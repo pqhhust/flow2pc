@@ -7,8 +7,8 @@ teacher:
   name: alicfm
 selection:
   student_roots:
-  - /data/lthung/flow2pc/distill/alicfm/selected-students/st
-  metric: auto
+  - /data/lthung/flow2pc/distill/student-sweep-100/alicfm/st
+  metric: validation_selection_score
 device: cuda:0
 evaluation:
   levels:
@@ -24,11 +24,12 @@ evaluation:
   - 5000
   - 10000
   source_split: all
-  reference_split: protocol
-  hdr_representation: auto
+  reference_split: test
+  hdr_representation: full
+  time_indices: [1]
 logging:
   mode: online
   project: flow2pc
-  name: st-alicfm-e3_1-selected-emd
+  name: st-alicfm-e3_1-selected-mse
 output:
-  dir: /data/lthung/flow2pc/experiments/e3_1/selected-emd-v1/alicfm/st
+  dir: /data/lthung/flow2pc/experiments/e3_1/st-mse-v1/alicfm/st

@@ -1,0 +1,33 @@
+# E3.2 pilot: fixed embedding-coordinate masks; no model training.
+stage: evaluate
+experiment: e3_2
+dataset: multi5
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/multi5/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/student-sweep-100/otpfm/multi5
+  metric: validation_selection_score
+device: cuda:0
+evaluation:
+  time_indices: [1]
+  # Complementary partitions: observe 40% / 60%, predict 3D / 2D.
+  observed_masks: [[0, 1], [2, 3, 4]]
+  levels: [0.5, 0.7, 0.9, 0.95]
+  seeds: [0, 1, 2]
+  bank_sizes: [2000, 5000]
+  conditional_draw_sizes: [256, 512]
+  condition_bandwidths: [0.05, 0.1, 0.2]
+  primary_bandwidth: 0.1
+  min_effective_components: 20
+  source_split: all
+  reference_split: test
+  # Deterministic subset; shared between teacher and student.
+  max_test_samples: 512
+logging:
+  mode: online
+  project: flow2pc
+  name: multi5-otpfm-e3_2-selected-mse
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_2/single-cell-mse-v1/otpfm/multi5

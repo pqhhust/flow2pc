@@ -14,8 +14,10 @@ from flow2pc.experiments.adapters import (
     training_coordinates,
 )
 from flow2pc.experiments.analytic_knot import array_sha256, contract as analytic_contract, enabled as analytic_enabled
-from flow2pc.experiments.e3_1.figures import save_regions, save_summary
-from flow2pc.experiments.e3_1.metrics import EstimatedHDR, Representation, energy_score
+from flow2pc.experiments.e3_1.figures import save_fidelity, save_regions, save_summary
+from flow2pc.experiments.e3_1.metrics import (
+    EstimatedHDR, Representation, distribution_fidelity, energy_score, region_fidelity,
+)
 from flow2pc.experiments.io import write_csv
 from flow2pc.experiments.selection import digest, identity, implementation_identity, read_json, select_student
 from flow2pc.utils.checkpoint import atomic_json, atomic_path
@@ -45,6 +47,31 @@ def summarize(rows, settings):
     return headline
 
 
+def summarize_fidelity(rows, settings):
+    fields = ("paired_ode_rmse", "mean_shift_l2", "relative_covariance_error",
+              "mean_interval_width_ratio", "relative_interval_width_error",
+              "teacher_region_teacher_mass", "teacher_region_student_mass",
+              "student_region_student_mass", "student_region_teacher_mass",
+              "teacher_region_mass_gap", "student_region_mass_gap")
+    summary = []
+    for level in settings["levels"]:
+        selected = [r for r in rows if r["bank_size"] == max(settings["bank_sizes"])
+                    and r["nominal_alpha"] == level]
+        if not selected:
+            continue
+        row = {"nominal_alpha": level, "bank_size": max(settings["bank_sizes"])}
+        for key in fields:
+            means = []
+            for seed in settings["seeds"]:
+                values = [r[key] for r in selected if r["seed"] == seed and r[key] is not None]
+                if values:
+                    means.append(float(np.mean(values)))
+            row[key] = float(np.mean(means)) if means else None
+            row[key + "_mc_std"] = float(np.std(means)) if means else None
+        summary.append(row)
+    return summary
+
+
 def run(config):
     selection = select_student(config)
     selection["student_sha256"] = digest(selection["checkpoint"])
@@ -62,7 +89,7 @@ def _run(config, selection, output):
     settings = config["evaluation"]
     analytic = analytic_enabled(settings)
     reference_note = (
-        "fresh independently seeded analytic observations, unused in training/EMD selection; checkpoints selected with earlier saved EMD"
+        f"fresh independently seeded analytic observations, unused in training/model selection; selected by saved {selection['metric']}"
         if analytic else
         "retrospective; EMD/velocity model selection and possibly preprocessing already used held-out data"
     )
@@ -141,13 +168,14 @@ def _run(config, selection, output):
                     "initial_time_excluded": True, "direct_pc_sampling": False})
         logger.log({"e3_1/phase": "scoring", "e3_1/source_count": sampling["source_count"],
                     "e3_1/teacher_nfe": sampling["nfe"]["teacher"], "e3_1/student_nfe": sampling["nfe"]["student"]})
-        rows, regions = [], {}
+        rows, fidelity_rows, regions = [], [], {}
         region_times = {times[0], times[-1]}
         for position, index in enumerate(times):
             real = references[index]
             energy_real, hdr_real = representation.energy(real), representation.hdr(real)
             sufficient = len(real) >= settings["min_test_samples"]
             for seed, plan in plans.items():
+                model_regions = {}
                 for role in ("teacher", "student"):
                     predicted = paths[role][position]
                     energy = energy_score(energy_real, representation.energy(predicted[plan["energy_a"]]),
@@ -168,7 +196,11 @@ def _run(config, selection, output):
                             bandwidth_path = output / "density_diagnostics" / f"time{index}-{role}-s{seed}-n{budget}.json"
                             atomic_json(bandwidth_path, {"search": estimator.search, "selected_bandwidth": estimator.bandwidth,
                                                         "bandwidth_scale": settings["bandwidth_scale"], "model_fit_spread": estimator.scale,
+                                                        "selected_index": estimator.selected_index,
+                                                        "at_search_boundary": estimator.at_search_boundary,
+                                                        "unique_fit_rows": len(np.unique(predicted[plan["fit"][:budget]], axis=0)),
                                                         "tuning_data": "independent model draws only"})
+                            model_regions.setdefault(budget, {})[role] = (estimator, coverage)
                         for score in coverage:
                             row = {"method": config["teacher"]["name"], "dataset": config["dataset"],
                                    "role": role, "seed": seed,
@@ -179,7 +211,8 @@ def _run(config, selection, output):
                                    "hdr_dim": coordinate_contract["hdr_dim"], "projected_hdr": representation.projected,
                                    "representation_sha256": coordinate_sha, **score,
                                    "hdr_ece": ece, "energy_score": energy,
-                                   "bandwidth": estimator.bandwidth if estimator is not None else None}
+                                   "bandwidth": estimator.bandwidth if estimator is not None else None,
+                                   "bandwidth_at_search_boundary": estimator.at_search_boundary if estimator is not None else None}
                             rows.append(row)
                             logger.log({"e3_1/" + key: value for key, value in row.items()})
                         if (estimator is not None and index in region_times and seed == settings["seeds"][0]
@@ -189,7 +222,27 @@ def _run(config, selection, output):
                                 regions.setdefault(index, []).append({"role": role, "time": dataset.metadata.physical_times[index],
                                     "real": hdr_real, "model": representation.hdr(predicted[plan["fit"][:budget]]),
                                     "estimator": estimator, "threshold": threshold})
+                if model_regions:
+                    teacher_draws = paths["teacher"][position][plan["energy_a"]]
+                    student_draws = paths["student"][position][plan["energy_a"]]
+                    statistics = distribution_fidelity(representation.energy(teacher_draws),
+                                                       representation.energy(student_draws), settings["levels"])
+                    for budget, estimators in model_regions.items():
+                        teacher_estimator, teacher_regions = estimators["teacher"]
+                        student_estimator, student_regions = estimators["student"]
+                        masses = region_fidelity(teacher_estimator, student_estimator,
+                                                  representation.hdr(teacher_draws), representation.hdr(student_draws),
+                                                  teacher_regions, student_regions)
+                        for stats, mass in zip(statistics, masses, strict=True):
+                            row = {"method": config["teacher"]["name"], "dataset": config["dataset"],
+                                   "seed": seed, "time_index": index,
+                                   "physical_time": dataset.metadata.physical_times[index],
+                                   "model_time": dataset.metadata.model_times[index], "bank_size": budget,
+                                   "representation_sha256": coordinate_sha, **stats, **mass}
+                            fidelity_rows.append(row)
+                            logger.log({"e3_1/fidelity/" + key: value for key, value in row.items()})
             write_csv(output / "by_time.csv", rows)
+            write_csv(output / "fidelity_by_time.csv", fidelity_rows)
             print(f"E3.1 {config['teacher']['name']}/{config['dataset']}: time {index} finished; {len(real)} real observations", flush=True)
         headline = summarize(rows, settings)
         write_csv(output / "summary.csv", headline)
@@ -200,7 +253,10 @@ def _run(config, selection, output):
             comparison.update({f"teacher_{metric}": before, f"student_{metric}": after,
                                f"student_minus_teacher_{metric}": after - before if before is not None and after is not None else None})
         write_csv(output / "comparison.csv", [comparison])
+        fidelity_summary = summarize_fidelity(fidelity_rows, settings)
+        write_csv(output / "fidelity_summary.csv", fidelity_summary)
         figures = save_summary(rows, output / "figures")
+        figures.update(save_fidelity(fidelity_summary, output / "figures"))
         figures.update(save_regions(regions, output / "figures"))
         if analytic:
             from flow2pc.experiments.e3_1.figures import save_knot_geometry
@@ -208,9 +264,28 @@ def _run(config, selection, output):
             figures.update(save_knot_geometry(paths, references, times, dataset,
                                               plans[settings["seeds"][0]]["fit"], output / "figures"))
         atomic_json(output / "media.json", figures)
-        result = {"experiment": "e3_1", "method": config["teacher"]["name"], "dataset": config["dataset"],
+        estimator_diagnostics = {
+            "bandwidth_boundary_fraction": float(np.mean([r["bandwidth_at_search_boundary"] for r in rows
+                if r["nominal_alpha"] == settings["levels"][0] and r["bandwidth_at_search_boundary"] is not None]))
+                if any(r["bandwidth_at_search_boundary"] is not None for r in rows) else None,
+            "source_support": sampling["unique_source_rows_integrated"],
+            "source_law": sampling["initial_law"],
+            "qualification": ("fresh analytic draws" if analytic else
+                              "banks resample a finite empirical source law; larger banks do not create new source support"),
+            "bandwidth_boundary_note": "a boundary choice requires sensitivity review; it is not proof of KDE convergence",
+        }
+        atomic_json(output / "estimator_diagnostics.json", estimator_diagnostics)
+        result = {"schema_version": 2, "experiment": "e3_1", "method": config["teacher"]["name"], "dataset": config["dataset"],
                   "output_dir": str(output), "summary": headline, "selection": selection,
                   "comparison": comparison,
+                  "fidelity_summary": fidelity_summary,
+                  "fidelity_protocol": {"statistics_space": "full-state training-standardized coordinates",
+                      "region_space": coordinate_contract["hdr_space"],
+                      "bank": "energy_a: independent of density fit, tune and threshold banks",
+                      "pairing": "same initial particles across models, never real trajectory pairings",
+                      "interpretation": "cross-region mass gaps, location/covariance/width errors are diagnostics, not equivalence proofs",
+                      "uncertainty": "MC standard deviations only; no independent-observation confidence interval"},
+                  "estimator_diagnostics": estimator_diagnostics,
                   "representation_sha256": coordinate_sha, "media": figures,
                   "interpretation": ("fresh synthetic test calibration under the explicit analytic knot initial law; fixed checkpoints, MC variability only"
                                      if analytic else "retrospective real-observation calibration; MC variability only, not an untouched-test or independent-retraining claim")}

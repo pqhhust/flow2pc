@@ -92,7 +92,7 @@ def save_regions(regions, output):
         dimension = entries[0]["real"].shape[1]
         if dimension not in (1, 2):
             continue
-        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=True, sharey=True)
         for ax, entry in zip(axes, entries):
             real, model, estimator = entry["real"], entry["model"], entry["estimator"]
             combined = np.concatenate((real, model))
@@ -107,13 +107,19 @@ def save_regions(regions, output):
                 ax.fill_between(grid, 0, density, where=score >= entry["threshold"], alpha=.3,
                                 color=COLORS[entry["role"]], label="estimated 90% region")
             else:
-                xs = np.linspace(low[0] - margin[0], high[0] + margin[0], 100)
-                ys = np.linspace(low[1] - margin[1], high[1] + margin[1], 100)
+                # Resolve the model's region locally, including narrow clouds;
+                # real/model scatter determines the shared displayed axes.
+                model_low, model_high = np.quantile(model, [.001, .999], axis=0)
+                model_margin = np.maximum((model_high - model_low) * .2, 4 * estimator.bandwidth)
+                xs = np.linspace(model_low[0] - model_margin[0], model_high[0] + model_margin[0], 200)
+                ys = np.linspace(model_low[1] - model_margin[1], model_high[1] + model_margin[1], 200)
                 xx, yy = np.meshgrid(xs, ys)
                 score = estimator.score(np.column_stack((xx.ravel(), yy.ravel()))).reshape(xx.shape)
                 ax.scatter(real[:, 0], real[:, 1], s=5, color="gray", alpha=.4, label="real observations")
                 if score.min() <= entry["threshold"] <= score.max():
                     ax.contour(xx, yy, score, levels=[entry["threshold"]], colors=[COLORS[entry["role"]]])
+                else:
+                    ax.text(.02, .02, "Contour unresolved on plotting grid", transform=ax.transAxes, fontsize=7)
                 ax.scatter(model[:500, 0], model[:500, 1], s=3, color=COLORS[entry["role"]], alpha=.2,
                            label="model ODE draws")
                 ax.set_ylabel("Scoring coordinate 2")
@@ -126,6 +132,30 @@ def save_regions(regions, output):
         plt.close(fig)
         figures[f"regions_time_{index}"] = str(path)
     return figures
+
+
+def save_fidelity(summary, output):
+    if not summary:
+        return {}
+    output.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=True, sharey=True)
+    levels = [row["nominal_alpha"] for row in summary]
+    for ax, region in zip(axes, ("teacher", "student"), strict=True):
+        for role in ("teacher", "student"):
+            key = f"{region}_region_{role}_mass"
+            ax.errorbar(levels, [row[key] for row in summary],
+                        yerr=[row[key + "_mc_std"] for row in summary],
+                        marker="o", color=COLORS[role], label=f"{role} draws")
+        ax.plot([0, 1], [0, 1], "k--", lw=1)
+        ax.set(xlim=(0, 1), ylim=(0, 1), xlabel="Nominal region probability",
+               title=f"Mass inside {region}-defined regions")
+        ax.legend()
+    axes[0].set_ylabel("Independent model-draw mass")
+    fig.suptitle("Uncertainty fidelity — error bars are MC standard deviations, not test-data CIs")
+    path = output / "fidelity.png"
+    fig.savefig(path, dpi=170, bbox_inches="tight")
+    plt.close(fig)
+    return {"fidelity": str(path)}
 
 
 def save_knot_geometry(paths, references, times, dataset, fit_indices, output):

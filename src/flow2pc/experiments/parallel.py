@@ -39,6 +39,12 @@ def scientific_config(config):
 
 def inspect(task, retry_incomplete=False):
     try:
+        if task.config["experiment"] == "e3_2":
+            from flow2pc.experiments.e3_2.config import validate_dimension
+            from flow2pc.experiments.selection import teacher_contract
+
+            teacher, _ = teacher_contract(task.config["teacher"])
+            validate_dimension(task.config["evaluation"]["observed_masks"], teacher["dataset"].get("dim"))
         task.selection = select_student(task.config)
         task.error = ""
         state = read_json(task.output / "status.json")
@@ -76,17 +82,22 @@ class ExperimentQueue(ParallelSweep):
 
 
 def report(args, tasks, active, state):
-    summary, audits, comparisons = [], [], []
+    summary, audits, comparisons, fidelity = [], [], [], []
     for task in tasks:
         result = read_json(task.output / "results.json")
         if result.get("comparison"):
             comparisons.append(result["comparison"])
+        for row in result.get("fidelity_summary", []):
+            fidelity.append({"method": task.config["teacher"]["name"], "dataset": task.dataset,
+                             "status": task.status, **row, "output_dir": str(task.output)})
         for row in result.get("summary", []):
             summary.append({"method": task.config["teacher"]["name"], "dataset": task.dataset,
                             "status": task.status, **row,
                             "representation_sha256": result.get("representation_sha256"),
                             "selected_student": task.selection.get("checkpoint"),
-                            "selection_emd": task.selection.get("score"),
+                            "selection_metric": task.selection.get("metric"),
+                            "selection_score": task.selection.get("score"),
+                            "selection_emd": (task.selection.get("score") if task.selection.get("metric", "").startswith("student_ode_emd") else None),
                             "output_dir": str(task.output)})
         path = task.output / "dataset_audit.csv"
         if path.is_file():
@@ -94,6 +105,7 @@ def report(args, tasks, active, state):
                 audits.extend(csv.DictReader(stream))
     write_csv(args.output_root / "summary.csv", summary)
     write_csv(args.output_root / "comparisons.csv", comparisons)
+    write_csv(args.output_root / "fidelity_summary.csv", fidelity)
     write_csv(args.output_root / "dataset_audit.csv", audits)
     write_json(args.output_root / "_launcher/status.json", {
         "status": state, "experiment": args.experiment, "total": len(tasks),
@@ -161,7 +173,7 @@ def main(argv=None):
                 task = Task(dataset, f"{args.experiment}-{method}-{dataset}-hclt", config, output)
                 inspect(task)
                 if task.selection:
-                    # Freeze one EMD winner in the worker config. New candidates
+                    # Freeze the declared score's winner. New candidates
                     # completing later cannot silently change an active task.
                     task.config["selection"]["pinned_checkpoint"] = task.selection["checkpoint"]
                     inspect(task)
@@ -174,7 +186,12 @@ def main(argv=None):
                       "source_split": t.config["evaluation"]["source_split"],
                       "reference_split": t.config["evaluation"]["reference_split"],
                       "max_test_samples": t.config["evaluation"]["max_test_samples"],
-                      "student": t.selection.get("checkpoint"), "selection_emd": t.selection.get("score"),
+                      "student": t.selection.get("checkpoint"),
+                      "selection_metric": t.selection.get("metric"),
+                      "selection_score": t.selection.get("score"),
+                      "selection_emd": (t.selection.get("score") if t.selection.get("metric", "").startswith("student_ode_emd") else None),
+                      "candidate_count": t.selection.get("candidate_count"),
+                      "selection_final": t.selection.get("selection_final"),
                       "output": str(t.output)} for t in tasks]}, indent=2), flush=True)
         if args.dry_run:
             return int(any(t.status == "blocked" for t in tasks))

@@ -1,5 +1,9 @@
 # Research experiments
 
+E3.2 is now prepared as a separate conditional-calibration module with ST
+ALI-CFM/OTP-FM presets. See [the E3.2 protocol and launch recipe](E3_2_CONDITIONAL.md).
+It reports conditional HDR-ECE and Energy Score, with no SD-ECE.
+
 Experiment implementations live together in `src/flow2pc/experiments/`.
 The registry in `__init__.py` dispatches evaluation-only experiments through
 the existing `main.py --config` CLI. Shared modules own configuration,
@@ -8,13 +12,18 @@ Each experiment owns its metrics, figures and runner in a subfolder. Future
 experiments add a registered module and YAMLs, rather than dataset scripts or
 branches in teacher/student training.
 
+The current ST E3.1 setup uses validation-MSE checkpoint selection and adds
+direct uncertainty-fidelity and KDE-support diagnostics. See
+[the ST protocol and launch recipe](ST_E3_1.md). Other existing presets retain
+their declared EMD selection; they are not silently redirected to the new sweeps.
+
 ```text
 src/flow2pc/experiments/
   __init__.py             # lazy experiment registry
   config.py              # shared evaluate-only configuration
   adapters.py            # frozen ALI/OTP + HCLT loading and ODE sample banks
   analytic_knot.py       # explicit analytic knot source/reference law
-  selection.py           # EMD ranking, checkpoint bindings, provenance
+  selection.py           # declared validation-MSE/EMD selection and bindings
   io.py                  # atomic result writers, usable without Torch
   parallel.py            # shared multi-GPU experiment controller
   e3_1/{config,metrics,runner,figures}.py
@@ -31,7 +40,7 @@ Do not interpret the software's presence as a measured calibration result.
 
 This implements E3.1 from the local `Flow2PC_E3_UQ_README_download.md`, restricted
 to ALI-CFM and OTP-FM first. E3.2, MFM/MMFM adapters and additional student tuning
-are future work. Student mathematics, velocity-MSE training, teacher training,
+are separate work. Student mathematics, velocity-MSE training, teacher training,
 and distillation checkpoint selection are unchanged. The scientific question is
 whether the **ODE-generated** student distribution preserves its teacher's
 calibration against real observations. Internal PC log probabilities and direct

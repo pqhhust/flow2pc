@@ -3,7 +3,9 @@
 import numpy as np
 import pytest
 
-from flow2pc.experiments.e3_1.metrics import EstimatedHDR, Representation, energy_score
+from flow2pc.experiments.e3_1.metrics import (
+    EstimatedHDR, Representation, distribution_fidelity, energy_score, region_fidelity,
+)
 
 
 def test_energy_score_has_known_two_point_value():
@@ -61,3 +63,50 @@ def test_narrow_model_bank_can_scale_the_bandwidth_search():
     assert estimator.scale == pytest.approx(expected_scale)
     assert estimator.bandwidth == pytest.approx(expected_scale * len(fit) ** (-1 / 6))
     assert EstimatedHDR(fit, tune, [1]).scale == 1.0
+
+
+def test_fidelity_separates_location_error_from_interval_width_error():
+    teacher = np.array([[-1., -2.], [0., 0.], [1., 2.]])
+    shifted = teacher + np.array([3., 4.])
+    row = distribution_fidelity(teacher, shifted, [.9])[0]
+    assert row["mean_shift_l2"] == pytest.approx(5.)
+    assert row["paired_ode_rmse"] == pytest.approx(np.sqrt(12.5))
+    assert row["relative_covariance_error"] == pytest.approx(0.)
+    assert row["mean_interval_width_ratio"] == pytest.approx(1.)
+    assert row["relative_interval_width_error"] == pytest.approx(0.)
+    scaled = distribution_fidelity(teacher, 2 * teacher, [.9])[0]
+    assert scaled["mean_shift_l2"] == pytest.approx(0.)
+    assert scaled["relative_covariance_error"] == pytest.approx(3.)
+    assert scaled["mean_interval_width_ratio"] == pytest.approx(2.)
+
+
+def test_identical_model_draws_have_zero_fidelity_errors():
+    teacher = np.array([[-1., -2.], [0., 0.], [1., 2.]])
+    row = distribution_fidelity(teacher, teacher.copy(), [.5, .9])[1]
+    assert row["paired_ode_rmse"] == row["mean_shift_l2"] == row["relative_covariance_error"] == 0.
+    assert row["mean_interval_width_ratio"] == pytest.approx(1.)
+
+
+def test_degenerate_spread_is_reported_undefined_instead_of_clamped():
+    row = distribution_fidelity(np.zeros((4, 2)), np.ones((4, 2)), [.9])[0]
+    assert row["relative_covariance_error"] is None
+    assert row["mean_interval_width_ratio"] is None
+    assert row["relative_interval_width_error"] is None
+
+
+def test_region_fidelity_detects_disjoint_models_and_identity():
+    class Ranking:
+        def __init__(self, center):
+            self.center = center
+
+        def score(self, values):
+            return -((values - self.center) ** 2).sum(1)
+
+    teacher, student = np.array([[-1.], [0.], [1.]]), np.array([[9.], [10.], [11.]])
+    regions = [{"nominal_alpha": .9, "log_density_threshold": -1.}]
+    row = region_fidelity(Ranking(0.), Ranking(10.), teacher, student, regions, regions)[0]
+    assert row["teacher_region_teacher_mass"] == row["student_region_student_mass"] == 1.
+    assert row["teacher_region_student_mass"] == row["student_region_teacher_mass"] == 0.
+    assert row["teacher_region_mass_gap"] == row["student_region_mass_gap"] == -1.
+    identical = region_fidelity(Ranking(0.), Ranking(0.), teacher, teacher, regions, regions)[0]
+    assert identical["teacher_region_mass_gap"] == identical["student_region_mass_gap"] == 0.

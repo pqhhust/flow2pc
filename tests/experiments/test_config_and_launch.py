@@ -38,3 +38,16 @@ def test_dry_run_does_not_query_gpu_start_workers_or_write_files(tmp_path, monke
     assert parallel.main(["--dry-run", "--methods", "alicfm", "--datasets", "beijing",
                           "--output-root", str(output)]) == 0
     assert not output.exists()
+
+
+def test_st_uses_velocity_validation_winner_and_full_heldout_population():
+    for method in ("alicfm", "otpfm"):
+        config = load_config(ROOT / f"configs/experiments/e3_1/{method}/{method}_st_hclt.yaml")
+        assert config["selection"]["metric"] == "validation_selection_score"
+        assert config["selection"]["student_roots"] == [
+            f"/data/lthung/flow2pc/distill/student-sweep-100/{method}/st"]
+        assert config["evaluation"]["time_indices"] == [1]
+        assert config["evaluation"]["reference_split"] == "test"
+        assert config["evaluation"]["source_split"] == "all"
+        assert config["evaluation"]["hdr_representation"] == "full"
+        assert config["output"]["dir"].endswith(f"/st-mse-v1/{method}/st")

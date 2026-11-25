@@ -1,15 +1,18 @@
-# Frozen selected synthetic teacher; existing HCLT training and velocity MSE only.
-# Reserved endpoint rows select the student; middle-time populations remain test data.
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/lidar/best_config.yaml
+# Selected best.pt step: 20000; validation score: 0.0067203726309.
+# Retains the winning run output directory and its saved evaluation protocol.
 stage: distill
 seed: 0
 teacher:
   name: otpfm
   data_root: /data/pqhung_group/pdtung/flow2pc/data/lidar/seed42
-  checkpoint: /data/lthung/flow2pc/mfm-teachers/sweep-256/otpfm/lidar/lidar-otpfm-c080-h512-l8-lr0.0003-meanflow-b256-s42-225899a0a6ea/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/lidar/checkpoints/last.pt
+  format: framework
 student:
   name: hclt
   params:
-    num_latents: 128
+    num_latents: 256
     time_embedding_dim: 32
     time_feature_seed: 0
 distillation:
@@ -19,7 +22,7 @@ distillation:
   device: cuda:0
   steps: 20000
   batch_size: 64
-  lr: 0.001
+  lr: 0.003
   validate_every: 1000
   checkpoint_every: 1000
   log_every: 100
@@ -30,9 +33,9 @@ distillation:
 logging:
   mode: online
   project: flow2pc
-  name: lidar-otpfm-hclt-h128-f32-lr0.001-b64-s0
+  name: lidar-otpfm-hclt-h256-f32-lr0.003-b64-n20000-s0-b9590d069b49
 output:
-  dir: /data/lthung/flow2pc/distill/otpfm/lidar/hclt-best-teacher-seed0
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/lidar/lidar-otpfm-hclt-h256-f32-lr0.003-b64-n20000-s0-b9590d069b49
 evaluation:
   enabled: true
   num_samples: 512

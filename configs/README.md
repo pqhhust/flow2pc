@@ -63,6 +63,20 @@ Arch/Sphere middle populations remain test data.
 The selected teacher presets log to W&B project `flow2pc` and retain final
 evaluation/figures. Existing trained checkpoints and sweep outputs are preserved.
 
+For student hyperparameter sweeps against the current frozen ALI-CFM/OTP-FM
+teachers, see [student sweeps](../docs/STUDENT_SWEEPS.md). These inherit the
+presets here, generate run YAMLs under the external output root, and rank by
+the dataset-specific velocity-MSE validation score, independently of EMD/UQ.
+
+The 19 presets covered by the completed 1,900-run student sweep were manually
+synchronized with its winners on 2026-11-21: eight ALI-CFM and eleven OTP-FM
+recipes. They retain the exact saved teacher, student settings, validation and
+evaluation protocol, W&B name, and existing winning output directory. Each YAML
+records its source `best_config.yaml` and selected checkpoint step in comments.
+For a new training replication, override `output.dir`; the default identifies
+the already completed winning run. This synchronization does not switch the
+evaluation to full populations or redirect existing experiment configs.
+
 Research experiment YAMLs are grouped separately under
 `experiments/<experiment>/{alicfm,otpfm}/`, with filenames such as
 `alicfm_beijing_hclt.yaml`. They use `stage: evaluate` and an explicit experiment

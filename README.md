@@ -7,6 +7,10 @@ OTP-FM's successful historical conditional sampler is restored in the shared
 distillation runner, using the existing HCLT student and training recipe.
 See [OTP distillation, selected-teacher configs and commands](docs/OTPFM_DISTILLATION.md).
 
+For shared dataset settings across all four methods, read the
+[dataset training and evaluation reference](docs/DATASET_TRAINING_EVALUATION.md).
+It separates source protocols, current implementation choices and alignment gaps.
+
 ## Retained code
 
 ```text
