@@ -1,6 +1,7 @@
 """Native interval adapters and checkpoint-pair regressions; no large data."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,50 @@ import torch
 from flow2pc.data.mfm_catalog import FORMAT, digest
 from flow2pc.pretrain.models.mfm import snapshot_native, snapshots
 from flow2pc.utils.mfm_source import fingerprint
+
+
+def test_image_networks_use_upstream_constructor_settings(monkeypatch):
+    from flow2pc.pretrain.models.mfm import model
+
+    calls = []
+
+    class Network:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(model, "source_module", lambda *args: SimpleNamespace(
+        GeoPathUNet=Network, UNetModelWrapper=Network,
+    ))
+    model.make_network({"data_type": "image"}, geopath=True)
+    model.make_network({"data_type": "image"})
+    assert calls[0] == {
+        "dim": (4, 16, 16), "num_channels": 64, "num_res_blocks": 2,
+        "channel_mult": [1, 2, 2], "dropout": 0.0, "use_checkpoint": False,
+    }
+    assert calls[1] == {
+        "dim": (4, 16, 16), "num_channels": 128, "num_res_blocks": 4,
+        "channel_mult": [2, 2, 2], "dropout": 0.1, "resblock_updown": False,
+        "use_new_attention_order": False, "attention_resolutions": "16",
+        "num_heads": 1,
+    }
+
+
+def test_snapshot_run_directories_are_unique_and_never_reused(tmp_path):
+    from flow2pc.pretrain.models.mfm.trainer import reserve_snapshot_output
+
+    legacy = tmp_path / "cite100" / "default"
+    legacy.mkdir(parents=True)
+    (legacy / "checkpoint.pt").write_bytes(b"original")
+    resolved = {"backend": "snapshots", "config": {"output": {"dir": str(legacy)}}}
+    first = Path(reserve_snapshot_output(resolved)["config"]["output"]["dir"])
+    second = Path(reserve_snapshot_output(resolved)["config"]["output"]["dir"])
+    assert first != second
+    assert first.parent == second.parent == legacy.parent
+    assert first.name.startswith("run-") and second.name.startswith("run-")
+    assert (legacy / "checkpoint.pt").read_bytes() == b"original"
+    assert resolved["config"]["output"]["dir"] == str(legacy)
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        reserve_snapshot_output({"config": {"output": {"dir": str(first)}}})
 
 
 def test_explicit_intervals_keep_nonuniform_times_and_one_dimensional_batches():

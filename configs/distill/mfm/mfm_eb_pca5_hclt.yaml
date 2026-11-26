@@ -3,12 +3,12 @@ stage: distill
 seed: 42
 teacher:
   name: mfm
-  checkpoint: outputs/mfm/eb_pca5/default/pretrain/checkpoints/flow.pt
+  checkpoint: outputs/pretrain/mfm/eb_pca5/default/checkpoints/flow.pt
   params:
-    geopath_checkpoint: outputs/mfm/eb_pca5/default/pretrain/checkpoints/geopath.pt
+    geopath_checkpoint: outputs/pretrain/mfm/eb_pca5/default/checkpoints/geopath.pt
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/eb_pca5/seed42
+  root: data/eb_pca5/seed42
 student:
   name: hclt
   params:
@@ -30,7 +30,7 @@ distillation:
   checkpoint_every: 5000
   resume_checkpoint: null
 output:
-  dir: outputs/mfm/eb_pca5/default/distill/hclt
+  dir: outputs/distill/mfm/eb_pca5/default/hclt
 evaluation:
   metric_space: dataset
   solver: dopri5

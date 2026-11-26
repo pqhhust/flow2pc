@@ -4,7 +4,7 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
-from flow2pc.utils.paths import MFM_ROOT as DEFAULT_REPO
+from flow2pc.utils.paths import MFM_LOCAL_ROOT as DEFAULT_REPO
 from flow2pc.utils.paths import MMFM_ROOT
 
 DATA_TYPES = {
@@ -26,6 +26,13 @@ def source_module(name, repo_path=None, *, method="mfm"):
     root = Path(repo_path or DEFAULT_REPO).resolve()
     if not (root / "mfm").is_dir():
         raise FileNotFoundError(f"Metric Flow Matching source not found: {root}")
+    if root == DEFAULT_REPO.resolve():
+        module = importlib.import_module(
+            "flow2pc.pretrain.models.mfm._source.mfm." + name
+        )
+        if not Path(module.__file__).resolve().is_relative_to(root):
+            raise ImportError(f"Expected bundled MFM source under {root}")
+        return module
     loaded = sys.modules.get("mfm." + name)
     if loaded is not None and not Path(loaded.__file__).resolve().is_relative_to(root):
         raise ImportError(

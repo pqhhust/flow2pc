@@ -7,7 +7,8 @@ from pathlib import Path
 from flow2pc.utils.paths import MFM_PRETRAIN_ROOT, REPO_ROOT
 
 FORMAT = "mfm_snapshots_v1"
-DATA_ROOT = REPO_ROOT / "data/mfm"
+DATA_ROOT = REPO_ROOT / "data"
+PREPARED_ROOT = REPO_ROOT / "data"
 
 
 def digest(value):
@@ -84,4 +85,4 @@ def prepared_path(root, name, seed=42):
     profile(name)
     if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("seed must be an integer in [0, 2**32)")
-    return Path(root).expanduser().resolve() / "prepared" / name / f"seed{seed}"
+    return Path(root).expanduser().resolve() / name / f"seed{seed}"

@@ -8,7 +8,7 @@ from flow2pc.pretrain.models.mfm.adapter import MetricPathSampler, MetricVelocit
 from flow2pc.pretrain.models.mfm.base import LoadedTeacher
 from flow2pc.pretrain.models.mfm.model import network_from_checkpoint
 from flow2pc.utils.mfm_source import fingerprint, sample_shape, source_module, validate_dataset
-from flow2pc.utils.paths import MFM_ROOT as DEFAULT_REPO
+from flow2pc.utils.paths import MFM_LOCAL_ROOT as DEFAULT_REPO
 
 
 def checkpoint_args(checkpoint):
@@ -42,7 +42,17 @@ def load(config, device):
     if config.get("dataset") == "mfm_snapshots":
         from flow2pc.pretrain.models.mfm.snapshots import load_teacher
 
-        return load_teacher(config, device)
+        selected = dict(config)
+        if not selected.get("repo_path"):
+            run_config = Path(selected["checkpoint_path"]).resolve().parent.parent / "resolved_config.yaml"
+            if run_config.is_file():
+                import yaml
+
+                saved = yaml.safe_load(run_config.read_text())
+                selected["repo_path"] = saved["model"]["params"]["source_root"]
+            else:
+                selected["repo_path"] = str(DEFAULT_REPO)
+        return load_teacher(selected, device)
     repo = config.get("repo_path")
     flow_path = Path(config["checkpoint_path"])
     geo_path = Path(config["geopath_checkpoint"])
