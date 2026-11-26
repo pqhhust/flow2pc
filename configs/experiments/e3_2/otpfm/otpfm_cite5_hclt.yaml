@@ -11,6 +11,7 @@ selection:
   metric: validation_selection_score
 device: cuda:0
 evaluation:
+  student_inference: direct_pc
   time_indices: [1]
   # Complementary partitions: observe 40% / 60%, predict 3D / 2D.
   observed_masks: [[0, 1], [2, 3, 4]]
@@ -28,6 +29,6 @@ evaluation:
 logging:
   mode: online
   project: flow2pc
-  name: cite5-otpfm-e3_2-selected-mse
+  name: cite5-otpfm-e3_2-selected-mse-direct-pc
 output:
-  dir: /data/lthung/flow2pc/experiments/e3_2/single-cell-mse-v1/otpfm/cite5
+  dir: /data/lthung/flow2pc/experiments/e3_2/direct-pc-v1/otpfm/cite5

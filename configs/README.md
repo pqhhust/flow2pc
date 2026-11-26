@@ -82,7 +82,30 @@ Research experiment YAMLs are grouped separately under
 `alicfm_beijing_hclt.yaml`. They use `stage: evaluate` and an explicit experiment
 name; they never start training. See [experiment protocols and launch commands](../docs/experiments/README.md).
 
+E4 presets under `experiments/e4/{alicfm,otpfm}/` pin the Beijing/ST pilot
+checkpoints and declare teacher-relative initial-law shifts. The dataset choice,
+sampling law and unsupported HDR gate are explicit in
+[the E4 protocol](../docs/experiments/E4_SHIFT.md).
+
 OTP-FM distillation uses the restored `otpfm_conditional` sampler and the existing
 HCLT student/velocity-MSE training. Presets load the ten selected shared-data
 teachers; transport W2/W2Inf presets also load migrated reference teachers.
 See [the recovered sampler and its supported protocols](../docs/OTPFM_DISTILLATION.md).
+
+The optional ALI-CFM/OTP-FM initial-density pilot has separate ST configs under
+`distill/{alicfm,otpfm}/source_anchor/`; selected experiment recipes remain unchanged.
+See [the objective, validation and launch protocol](../docs/experiments/SOURCE_DENSITY_ANCHOR.md).
+The 42-run ST refinement reuses these same configs and the existing pilot
+controller, varying only NLL weight and learning rate:
+`bash scripts/run_source_nll_refinement_8gpu.sh`. It does not replace selected
+experiment recipes or train on student-generated samples.
+
+Four confirmation recipes under `source_anchor/confirmation/` pin completed
+seed-0 students for the repeated-seed check. The normal distillation YAML
+format is retained. Use `bash scripts/run_source_nll_confirmation_7gpu.sh` to
+reuse them and train seeds 1/2; see
+[the protocol](../docs/experiments/SOURCE_NLL_CONFIRMATION.md).
+
+The CITE-5D/50D/100D and knot source-NLL recipes share `source_anchor/` and
+preserve each selected recipe's final benchmark settings. See the
+[40-run pilot and separate query audits](../docs/experiments/SOURCE_NLL_MULTIDATA.md).

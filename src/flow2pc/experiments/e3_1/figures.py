@@ -103,7 +103,8 @@ def save_regions(regions, output):
                 score = estimator.score(grid[:, None])
                 density = np.exp(score)
                 ax.hist(real[:, 0], bins=35, density=True, alpha=.3, color="gray", label="real observations")
-                ax.plot(grid, density, color=COLORS[entry["role"]], label="model KDE")
+                ax.plot(grid, density, color=COLORS[entry["role"]],
+                        label="direct PC density" if entry["role"] == "student" else "teacher KDE")
                 ax.fill_between(grid, 0, density, where=score >= entry["threshold"], alpha=.3,
                                 color=COLORS[entry["role"]], label="estimated 90% region")
             else:
@@ -121,12 +122,12 @@ def save_regions(regions, output):
                 else:
                     ax.text(.02, .02, "Contour unresolved on plotting grid", transform=ax.transAxes, fontsize=7)
                 ax.scatter(model[:500, 0], model[:500, 1], s=3, color=COLORS[entry["role"]], alpha=.2,
-                           label="model ODE draws")
+                           label="direct PC draws" if entry["role"] == "student" else "teacher ODE draws")
                 ax.set_ylabel("Scoring coordinate 2")
             ax.set_xlabel("Scoring coordinate 1")
             ax.set_title(f"{entry['role']} — physical time {entry['time']:g}")
             ax.legend(fontsize=8)
-        fig.suptitle("Estimated KDE regions in the recorded HDR representation")
+        fig.suptitle("Teacher KDE and direct PC density regions; thresholds estimated from model draws")
         path = output / f"regions_time_{index}.png"
         fig.savefig(path, dpi=170, bbox_inches="tight")
         plt.close(fig)
@@ -174,7 +175,8 @@ def save_knot_geometry(paths, references, times, dataset, fit_indices, output):
         values = paths[role][:, fit_indices]
         centers = values.mean(axis=1)
         ax.plot(means[:, 0], means[:, 1], color="black", lw=1, label="true knot mean")
-        ax.plot(centers[:, 0], centers[:, 1], color=COLORS[role], lw=1.5, label=f"{role} ODE mean")
+        ax.plot(centers[:, 0], centers[:, 1], color=COLORS[role], lw=1.5,
+                label="direct PC marginal mean" if role == "student" else "teacher ODE mean")
         for position in chosen:
             cloud = values[position, :150]
             ax.scatter(cloud[:, 0], cloud[:, 1], s=3, alpha=.15, color=COLORS[role])

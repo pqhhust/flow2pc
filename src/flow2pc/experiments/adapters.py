@@ -102,7 +102,7 @@ def bank_plan(source_count, settings):
     return plans
 
 
-def paired_banks(teacher, student, dataset, times, settings):
+def paired_banks(teacher, student, dataset, times, settings, *, include_student=True):
     if settings["source_split"] == "analytic_knot":
         from flow2pc.experiments.analytic_knot import source_banks
 
@@ -123,9 +123,57 @@ def paired_banks(teacher, student, dataset, times, settings):
     # The empirical mode integrates distinct requested source rows once. The
     # analytic mode integrates independent fresh initial particles for each bank.
     # Both use identical particles across teacher/student, with no real pairings.
-    for role, model in (("teacher", teacher), ("student", student)):
+    models = (("teacher", teacher), ("student", student)) if include_student else (("teacher", teacher),)
+    for role, model in models:
         path, nfe[role] = rollout(model, source[unique], grid, settings, student=role == "student")
         result[role] = raw_coordinates(path[1:], dataset.preprocessing).numpy()
     mapped = {seed: {name: np.searchsorted(unique, indices) for name, indices in plan.items()}
               for seed, plan in plans.items()}
     return result, mapped, {**sampling, "nfe": nfe, "rollout_origin": "earliest"}
+
+
+def query_banks(teacher, student, dataset, times, settings):
+    """Numerical teacher banks and independent direct-PC student banks.
+
+    The common array offsets are storage addresses, never particle pairings.
+    Student draws do not inherit the teacher's finite empirical source IDs.
+    """
+    from time import perf_counter
+
+    start = perf_counter()
+    teacher_paths, old_plans, sampling = paired_banks(
+        teacher, student, dataset, times, settings, include_student=False)
+    teacher_seconds = perf_counter() - start
+    plans, requested, cursor = {}, [], 0
+    for seed, plan in old_plans.items():
+        plans[seed] = {}
+        for name, indices in plan.items():
+            plans[seed][name] = np.arange(cursor, cursor + len(indices))
+            requested.append(indices)
+            cursor += len(indices)
+    paths = {"teacher": teacher_paths["teacher"][:, np.concatenate(requested)]}
+    parameter = next(student.parameters())
+    start = perf_counter()
+    draws = []
+    with torch.no_grad():
+        for index in times:
+            pieces = []
+            time = parameter.new_tensor(dataset.metadata.model_times[index])
+            for seed, plan in plans.items():
+                for bank_number, indices in enumerate(plan.values()):
+                    rng = np.random.default_rng(np.random.SeedSequence([seed, index, bank_number, 31032]))
+                    generator = torch.Generator(device=parameter.device).manual_seed(int(rng.integers(0, 2**63 - 1)))
+                    for offset in range(0, len(indices), settings["batch_size"]):
+                        values = student.sample(min(settings["batch_size"], len(indices) - offset), time, generator)
+                        pieces.append(raw_coordinates(values.cpu(), dataset.preprocessing).numpy())
+            draws.append(np.concatenate(pieces))
+    paths["student"] = np.stack(draws)
+    return paths, plans, {**sampling, "nfe": {**sampling["nfe"], "student": 0},
+        "teacher_inference": "ODE pushforward from declared teacher initial law",
+        "student_inference": "direct_pc", "direct_pc_sampling": True,
+        "student_initial_law": "the saved PC's own normalized law; no empirical-source substitution",
+        "bank_independence": "separate RNG streams per role, time, seed and bank; teacher source-ID overlap expected",
+        "cross_model_particle_pairing": False,
+        "teacher_bank_preparation_seconds": teacher_seconds,
+        "student_direct_sampling_seconds": perf_counter() - start,
+        "timing_note": "end-to-end bank preparation, not a controlled per-query speed benchmark"}

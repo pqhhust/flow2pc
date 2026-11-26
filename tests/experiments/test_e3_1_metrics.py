@@ -47,6 +47,14 @@ def test_projected_hdr_does_not_project_the_energy_score_state():
         Representation(training, "full")
 
 
+def test_explicit_five_dimensional_hdr_retains_every_coordinate():
+    training = np.random.default_rng(7).normal(size=(300, 5))
+    representation = Representation(training, "full")
+    assert not representation.projected
+    assert representation.hdr(training).shape == (300, 5)
+    np.testing.assert_array_equal(representation.axes, np.eye(5))
+
+
 def test_discrete_density_score_ties_are_recorded():
     values = np.zeros((30, 1))
     estimator = EstimatedHDR(values, values, [1])

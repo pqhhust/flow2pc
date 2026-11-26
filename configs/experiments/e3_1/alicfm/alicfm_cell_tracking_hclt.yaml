@@ -12,6 +12,7 @@ selection:
   metric: auto
 device: cuda:0
 evaluation:
+  student_inference: direct_pc
   levels:
   - 0.5
   - 0.7
@@ -37,6 +38,6 @@ evaluation:
 logging:
   mode: online
   project: flow2pc
-  name: cell_tracking-alicfm-e3_1-selected-emd
+  name: cell_tracking-alicfm-e3_1-selected-emd-direct-pc
 output:
-  dir: /data/lthung/flow2pc/experiments/e3_1/selected-emd-v1/alicfm/cell_tracking
+  dir: /data/lthung/flow2pc/experiments/e3_1/direct-pc-v1/alicfm/cell_tracking

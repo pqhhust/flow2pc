@@ -5,6 +5,7 @@ from importlib import import_module
 EXPERIMENTS = {
     "e3_1": "flow2pc.experiments.e3_1",
     "e3_2": "flow2pc.experiments.e3_2",
+    "e4": "flow2pc.experiments.e4",
 }
 
 

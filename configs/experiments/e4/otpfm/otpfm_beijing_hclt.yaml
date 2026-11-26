@@ -1,0 +1,63 @@
+# Frozen selected pair. Teacher-relative shift fidelity, not real shifted-data calibration.
+# Retained student uses historical winning settings; no new transport student sweep is claimed.
+stage: evaluate
+experiment: e4
+dataset: beijing
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/beijing_w2/checkpoints/best.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/otpfm/selected-students/beijing_w2/hclt-teacher-s0
+  metric: validation_selection_score
+  pinned_checkpoint: /data/lthung/flow2pc/distill/otpfm/selected-students/beijing_w2/hclt-teacher-s0/checkpoints/best.pt
+device: cuda:0
+evaluation:
+  reference_mode: teacher-relative
+  source_split: all
+  reference_split: independent_teacher
+  direction:
+  - 1.0
+  time_indices:
+  - 2
+  - 5
+  - 8
+  - 11
+  mean_shifts:
+  - 0.25
+  - 0.5
+  - 1.0
+  spread_factors:
+  - 0.75
+  - 1.25
+  - 1.5
+  n_initial: 2000
+  n_region: 2000
+  max_test_samples: 2000
+  n_es: 256
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  kernel_samples: 512
+  kernel_multipliers:
+  - 0.5
+  - 1.0
+  - 2.0
+  hdr_method: unavailable
+  batch_size: 128
+  solver: dopri5
+  tolerance: 1.0e-05
+  max_nfe: 50000
+  chunk_size: 256
+logging:
+  mode: online
+  project: flow2pc
+  name: beijing-otpfm-e4-teacher-relative
+output:
+  dir: /data/lthung/flow2pc/experiments/e4/teacher-relative-v1/otpfm/beijing

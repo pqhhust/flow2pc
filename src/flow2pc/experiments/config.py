@@ -51,6 +51,14 @@ def resolve(raw, base):
     logging.setdefault("name", f"{raw['dataset']}-{teacher['name']}-{raw['experiment']}")
     module = import_module(EXPERIMENTS[raw["experiment"]] + ".config")
     raw["evaluation"] = module.resolve(raw.get("evaluation", {}))
+    if raw["experiment"] == "e4":
+        if raw["dataset"] not in ("beijing", "st"):
+            raise ValueError("E4 pilot supports Beijing/ST Euclidean states; other datasets need an explicit domain/shift policy")
+        if selection["metric"] != "validation_selection_score":
+            raise ValueError("E4 selects frozen students by saved validation velocity score")
+        expected_dim = 1 if raw["dataset"] == "beijing" else 2
+        if len(raw["evaluation"]["direction"]) != expected_dim:
+            raise ValueError("E4 shift direction dimension differs from the selected dataset")
     if raw["evaluation"].get("source_split") == "analytic_knot" and raw["dataset"] != "knot":
         raise ValueError("Analytic knot evaluation is available only for dataset: knot")
     # Never let evaluation overwrite its input student or teacher directory.

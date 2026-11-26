@@ -11,6 +11,7 @@ DEFAULTS = {
     "analytic_seed": 20261113, "bandwidth_scale": "unit",
     "time_indices": None, "batch_size": 128, "tolerance": 1e-5,
     "max_nfe": 50000, "solver": "dopri5", "ode_steps": 200,
+    "student_inference": "direct_pc",
 }
 
 
@@ -19,6 +20,8 @@ def resolve(value):
 
     mapping(value, "E3.1 evaluation", set(DEFAULTS))
     result = {**DEFAULTS, **value}
+    if result["student_inference"] != "direct_pc":
+        raise ValueError("E3 student probabilistic queries require student_inference: direct_pc")
     for key in ("tune_samples", "energy_samples", "max_test_samples", "min_test_samples",
                 "representation_samples", "kde_chunk_size", "batch_size", "max_nfe", "ode_steps"):
         if type(result[key]) is not int or result[key] < 2:

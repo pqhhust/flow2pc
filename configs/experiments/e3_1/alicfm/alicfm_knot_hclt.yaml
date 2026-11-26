@@ -11,6 +11,7 @@ selection:
   metric: auto
 device: cuda:0
 evaluation:
+  student_inference: direct_pc
   levels:
   - 0.5
   - 0.7
@@ -32,6 +33,6 @@ evaluation:
 logging:
   mode: online
   project: flow2pc
-  name: knot-alicfm-e3_1-analytic-selected-emd
+  name: knot-alicfm-e3_1-analytic-selected-emd-direct-pc
 output:
-  dir: /data/lthung/flow2pc/experiments/e3_1/knot-analytic-v1/alicfm/knot
+  dir: /data/lthung/flow2pc/experiments/e3_1/direct-pc-v1/alicfm/knot

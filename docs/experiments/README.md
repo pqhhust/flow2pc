@@ -1,5 +1,27 @@
 # Research experiments
 
+The [full-dimensional CITE/knot source-NLL pilot](SOURCE_NLL_MULTIDATA.md)
+prepares 40 students and separate direct-query consistency checks, using
+frozen ALI-CFM/OTP-FM teachers and excluding GPU 3. Dataset benchmark protocols
+remain distinct from the new probability-query diagnostics.
+
+The completed ST source-NLL pilot and density/velocity diagnostics have a
+[saved-result audit and optional tail-recording recipe](SOURCE_DENSITY_AUDIT.md).
+Direct-PC accuracy remains under investigation; this is separate from the
+older ODE-based E3/E4 protocols described below.
+The next phase is a [focused repeated-seed NLL confirmation](SOURCE_NLL_CONFIRMATION.md):
+eight new students plus direct-PC diagnostics, with GPU 3 excluded.
+
+For a small E3.1/E3.2 check using frozen source-NLL students, see the
+[direct-PC ST query pilot](E3_SOURCE_NLL_PILOT.md). It reuses the current E3
+runners with explicitly pinned candidates and reduced evaluation budgets;
+the older ODE-based descriptions below are historical protocols.
+
+E4 now has an initial ALI-CFM/OTP-FM shift-fidelity pilot on Beijing and ST.
+See [the E4 review, protocol and launch commands](E4_SHIFT.md). It evaluates
+frozen ODEs against independent teacher references, with HDR explicitly N/A
+pending a validated estimator; it does not claim real-world shifted calibration.
+
 E3.2 is now prepared as a separate conditional-calibration module with ST
 ALI-CFM/OTP-FM presets. See [the E3.2 protocol and launch recipe](E3_2_CONDITIONAL.md).
 It reports conditional HDR-ECE and Energy Score, with no SD-ECE.
@@ -295,3 +317,9 @@ streams, disjoint source banks, saved preprocessing, matching teacher/student
 particles, dataset/grid guards and model-only bandwidth scaling.
 They have not been executed because the repository instructions require explicit
 test authorization. No test, training or E3.1 evaluation command was run.
+
+## Initial-density anchoring pilot
+
+The source-NLL ablation and own-initial-law density–velocity diagnostic are
+prepared separately from E3. Neither has been numerically validated. See
+[the source-density protocol and scripts](SOURCE_DENSITY_ANCHOR.md).

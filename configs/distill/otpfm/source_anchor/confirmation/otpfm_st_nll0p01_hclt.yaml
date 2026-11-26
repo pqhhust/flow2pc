@@ -1,0 +1,51 @@
+# Confirmation recipe chosen from the validation velocity/source-NLL tradeoff.
+# Pins the completed seed-0 run; use run_source_nll_confirmation_7gpu.sh for seeds 1/2.
+stage: distill
+seed: 0
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/st/checkpoints/last.pt
+  format: framework
+student:
+  name: hclt
+  params:
+    num_latents: 256
+    time_embedding_dim: 32
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: otpfm_conditional
+    params: {}
+  device: cuda:0
+  steps: 20000
+  batch_size: 64
+  lr: 0.002
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  validation_scope: dataset
+  source_nll_weight: 0.01
+  validation_population_metrics: false
+logging:
+  mode: online
+  project: flow2pc
+  name: st-otpfm-hclt-source-nll0.01-lr0.002-s0-446b212bd8af
+output:
+  dir: /data/lthung/flow2pc/distill/source-nll-refinement-v1/otpfm/st/st-otpfm-hclt-source-nll0.01-lr0.002-s0-446b212bd8af
+evaluation:
+  enabled: true
+  num_samples: 512
+  metric_samples: 512
+  seed: 2026
+  batch_size: 64
+  tolerance: 1.0e-05
+  max_nfe: 50000
+  solver: rk4
+  ode_steps: 100
+  metric_space: historical
+  source_split: all
+  reference_split: all
+  protocol: shared_ode

@@ -23,8 +23,8 @@ class Representation:
         values = (training - self.center) / self.scale
         self.full_dim = training.shape[1]
         projected = mode == "pca2" or (mode == "auto" and self.full_dim > 3)
-        if not projected and self.full_dim > 3:
-            raise ValueError("Full-state KDE is restricted to <=3D; explicitly select pca2")
+        if not projected and self.full_dim > 5:
+            raise ValueError("Full-state KDE is restricted to <=5D; explicitly select pca2")
         if projected:
             _, _, vectors = np.linalg.svd(values, full_matrices=False)
             self.axes = vectors[:min(2, self.full_dim)].T
@@ -61,7 +61,7 @@ def energy_score(real, generated, independent, chunk=256):
     return float((attraction - 0.5 * repulsion).mean())
 
 
-def distribution_fidelity(teacher, student, levels):
+def distribution_fidelity(teacher, student, levels, *, paired=True):
     """Full-state diagnostics on paired initial-particle pushforwards, not real trajectories."""
     teacher, student = map(finite_matrix, (teacher, student))
     if teacher.shape != student.shape:
@@ -71,7 +71,7 @@ def distribution_fidelity(teacher, student, levels):
     student_cov = student_centered.T @ student_centered / len(student)
     covariance_norm = float(np.linalg.norm(teacher_cov))
     shared = {
-        "paired_ode_rmse": float(np.sqrt(np.mean((student - teacher) ** 2))),
+        "paired_ode_rmse": float(np.sqrt(np.mean((student - teacher) ** 2))) if paired else None,
         "mean_shift_l2": float(np.linalg.norm(student.mean(0) - teacher.mean(0))),
         "relative_covariance_error": (float(np.linalg.norm(student_cov - teacher_cov)) / covariance_norm
                                       if covariance_norm > 0 else None),

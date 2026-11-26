@@ -1,4 +1,4 @@
-"""Evaluation-only E3.1, using frozen teacher/student ODE distributions."""
+"""E3.1: numerical teacher reference, direct frozen-PC student queries."""
 
 import fcntl
 from pathlib import Path
@@ -9,7 +9,7 @@ import yaml
 from flow2pc.experiments.adapters import (
     evaluation_times,
     load_pair,
-    paired_banks,
+    query_banks,
     real_population,
     training_coordinates,
 )
@@ -19,6 +19,7 @@ from flow2pc.experiments.e3_1.metrics import (
     EstimatedHDR, Representation, distribution_fidelity, energy_score, region_fidelity,
 )
 from flow2pc.experiments.io import write_csv
+from flow2pc.experiments.pc_queries import DirectPC, PCDensityHDR
 from flow2pc.experiments.selection import digest, identity, implementation_identity, read_json, select_student
 from flow2pc.utils.checkpoint import atomic_json, atomic_path
 from flow2pc.utils.tracking import LocalLogger
@@ -29,6 +30,7 @@ def summarize(rows, settings):
     for role in ("teacher", "student"):
         chosen = [r for r in rows if r["role"] == role and r["bank_size"] == maximum]
         result = {"role": role, "bank_size": maximum}
+        result["inference_method"] = "direct_pc" if role == "student" else "ode_kde"
         for metric, alpha in (("coverage", .9), ("hdr_ece", settings["levels"][0]),
                               ("energy_score", settings["levels"][0])):
             per_seed = []
@@ -155,22 +157,28 @@ def _run(config, selection, output):
         times = nonempty
         representation = Representation(training_coordinates(dataset, settings["representation_samples"]),
                                           settings["hdr_representation"])
+        if representation.projected:
+            raise ValueError("Direct PC HDR cannot use a rotated PCA density. Select a low-dimensional full-state E3.1 profile; a coordinate-marginal protocol is needed for projected high-dimensional reports. No student KDE/ODE fallback is used.")
+        direct_pc = DirectPC(student, dataset.preprocessing, representation.center,
+                             representation.scale, settings["kde_chunk_size"])
         coordinate_contract = representation.contract()
+        coordinate_contract["density"] = "teacher: Gaussian KDE of ODE draws; student: direct PC density, no KDE"
         coordinate_sha = identity(coordinate_contract)
         atomic_json(output / "representation.json", {**coordinate_contract, "sha256": coordinate_sha})
         logger = LocalLogger(output, config, append=(output / "metrics.jsonl").is_file())
-        logger.log({"e3_1/phase": "sampling_frozen_ODEs", "e3_1/analytic_knot": analytic})
-        print(f"E3.1 {config['teacher']['name']}/{config['dataset']}: sampling frozen teacher/student ODEs "
+        logger.log({"e3_1/phase": "teacher_ODE_and_direct_PC", "e3_1/analytic_knot": analytic})
+        print(f"E3.1 {config['teacher']['name']}/{config['dataset']}: teacher ODE and direct student PC "
               f"at {len(times)} times; initial law={settings['source_split']}", flush=True)
-        paths, plans, sampling = paired_banks(teacher, student, dataset, times, settings)
+        paths, plans, sampling = query_banks(teacher, student, dataset, times, settings)
         atomic_json(output / "sampling.json", {**sampling, "evaluation_settings": settings,
                     "physical_times": [dataset.metadata.physical_times[i] for i in times],
-                    "initial_time_excluded": True, "direct_pc_sampling": False})
+                    "initial_time_excluded": True})
         logger.log({"e3_1/phase": "scoring", "e3_1/source_count": sampling["source_count"],
                     "e3_1/teacher_nfe": sampling["nfe"]["teacher"], "e3_1/student_nfe": sampling["nfe"]["student"]})
         rows, fidelity_rows, regions = [], [], {}
         region_times = {times[0], times[-1]}
         for position, index in enumerate(times):
+            pc_density = PCDensityHDR(direct_pc.at(dataset.metadata.model_times[index]), representation.project_scale)
             real = references[index]
             energy_real, hdr_real = representation.energy(real), representation.hdr(real)
             sufficient = len(real) >= settings["min_test_samples"]
@@ -186,7 +194,7 @@ def _run(config, selection, output):
                                      "log_density_threshold": None, "threshold_bank_mass": None,
                                      "threshold_tie_fraction": None} for a in settings["levels"]]
                         if sufficient:
-                            estimator = EstimatedHDR(
+                            estimator = pc_density if role == "student" else EstimatedHDR(
                                 representation.hdr(predicted[plan["fit"][:budget]]),
                                 representation.hdr(predicted[plan["tune"]]),
                                 settings["bandwidth_multipliers"], settings["kde_chunk_size"],
@@ -194,16 +202,22 @@ def _run(config, selection, output):
                             coverage, ece = estimator.coverage(
                                 representation.hdr(predicted[plan["threshold"][:budget]]), hdr_real, settings["levels"])
                             bandwidth_path = output / "density_diagnostics" / f"time{index}-{role}-s{seed}-n{budget}.json"
-                            atomic_json(bandwidth_path, {"search": estimator.search, "selected_bandwidth": estimator.bandwidth,
+                            diagnostic = {"density_method": "direct_pc", "smoothing": False, "threshold_draws": budget}
+                            if role == "teacher":
+                                diagnostic = {"search": estimator.search, "selected_bandwidth": estimator.bandwidth,
                                                         "bandwidth_scale": settings["bandwidth_scale"], "model_fit_spread": estimator.scale,
                                                         "selected_index": estimator.selected_index,
                                                         "at_search_boundary": estimator.at_search_boundary,
                                                         "unique_fit_rows": len(np.unique(predicted[plan["fit"][:budget]], axis=0)),
-                                                        "tuning_data": "independent model draws only"})
+                                                        "tuning_data": "independent model draws only", "density_method": "ode_kde"}
+                            atomic_json(bandwidth_path, diagnostic)
                             model_regions.setdefault(budget, {})[role] = (estimator, coverage)
                         for score in coverage:
                             row = {"method": config["teacher"]["name"], "dataset": config["dataset"],
                                    "role": role, "seed": seed,
+                                   "inference_method": "direct_pc" if role == "student" else "ode_kde",
+                                   "density_exact_under_model": role == "student",
+                                   "hdr_threshold_method": "independent-model-draw density quantile",
                                    "seed_kind": "Monte Carlo analytic initial draws" if analytic else "Monte Carlo bank resampling",
                                    "time_index": index, "physical_time": dataset.metadata.physical_times[index],
                                    "model_time": dataset.metadata.model_times[index], "bank_size": budget,
@@ -226,7 +240,7 @@ def _run(config, selection, output):
                     teacher_draws = paths["teacher"][position][plan["energy_a"]]
                     student_draws = paths["student"][position][plan["energy_a"]]
                     statistics = distribution_fidelity(representation.energy(teacher_draws),
-                                                       representation.energy(student_draws), settings["levels"])
+                                                       representation.energy(student_draws), settings["levels"], paired=False)
                     for budget, estimators in model_regions.items():
                         teacher_estimator, teacher_regions = estimators["teacher"]
                         student_estimator, student_regions = estimators["student"]
@@ -282,13 +296,14 @@ def _run(config, selection, output):
                   "fidelity_protocol": {"statistics_space": "full-state training-standardized coordinates",
                       "region_space": coordinate_contract["hdr_space"],
                       "bank": "energy_a: independent of density fit, tune and threshold banks",
-                      "pairing": "same initial particles across models, never real trajectory pairings",
+                      "pairing": "independent direct-PC and teacher-ODE draws; paired_ode_rmse is N/A",
                       "interpretation": "cross-region mass gaps, location/covariance/width errors are diagnostics, not equivalence proofs",
                       "uncertainty": "MC standard deviations only; no independent-observation confidence interval"},
                   "estimator_diagnostics": estimator_diagnostics,
                   "representation_sha256": coordinate_sha, "media": figures,
-                  "interpretation": ("fresh synthetic test calibration under the explicit analytic knot initial law; fixed checkpoints, MC variability only"
-                                     if analytic else "retrospective real-observation calibration; MC variability only, not an untouched-test or independent-retraining claim")}
+                  "student_inference": "direct_pc", "teacher_inference": "ode_kde",
+                  "interpretation": ("direct PC calibration against fresh analytic knot references; analytic source applies only to teacher; fixed checkpoints, MC variability only"
+                                     if analytic else "direct PC retrospective calibration; teacher uses numerical ODE/KDE; no untouched-test claim")}
         atomic_json(output / "results.json", result)
         if logger.run is not None:
             import wandb

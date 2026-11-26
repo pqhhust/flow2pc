@@ -146,7 +146,8 @@ def main(argv=None):
             or len(set(args.datasets)) != len(args.datasets)
             or ("all" in args.datasets and args.datasets != ["all"])):
         cli.error("Invalid/duplicate experiment datasets or resource settings")
-    args.output_root = (args.output_root or Path("/data/lthung/flow2pc/experiments") / args.experiment / "selected-emd-v1").expanduser().resolve()
+    default_batch = "teacher-relative-v1" if args.experiment == "e4" else "direct-pc-v1"
+    args.output_root = (args.output_root or Path("/data/lthung/flow2pc/experiments") / args.experiment / default_batch).expanduser().resolve()
     tasks = []
     try:
         presets = {}

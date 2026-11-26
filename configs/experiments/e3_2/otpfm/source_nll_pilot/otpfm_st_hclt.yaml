@@ -1,0 +1,40 @@
+# Same frozen candidate and held-out cells as the matching E3.1 pilot.
+stage: evaluate
+experiment: e3_2
+dataset: st
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/st/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/source-nll-refinement-v1/otpfm/st/st-otpfm-hclt-source-nll0.1-lr0.002-s0-61b355e0e905
+  pinned_checkpoint: /data/lthung/flow2pc/distill/source-nll-refinement-v1/otpfm/st/st-otpfm-hclt-source-nll0.1-lr0.002-s0-61b355e0e905/checkpoints/best.pt
+  metric: validation_selection_score
+device: cuda:0
+evaluation:
+  student_inference: direct_pc
+  time_indices: [1]
+  observed_masks: [[0], [1]]
+  levels: [0.5, 0.7, 0.9, 0.95]
+  seeds: [0]
+  bank_sizes: [1024]
+  conditional_draw_sizes: [128]
+  condition_bandwidths: [0.1]
+  primary_bandwidth: 0.1
+  min_effective_components: 20
+  tune_samples: 256
+  energy_samples: 256
+  max_test_samples: 128
+  source_split: all
+  reference_split: test
+  batch_size: 64
+  kde_chunk_size: 128
+  solver: dopri5
+  tolerance: 0.00001
+  max_nfe: 10000
+logging:
+  mode: online
+  project: flow2pc
+  name: st-otpfm-e3_2-source-nll0.1-s0-pilot-direct-pc
+output:
+  dir: /data/lthung/flow2pc/experiments/source-nll-pilot-v1/e3_2/otpfm/st

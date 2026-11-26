@@ -1,0 +1,49 @@
+# Source-density pilot; teacher, student architecture and velocity queries use the selected recipe.
+# No teacher retraining. Positive NLL changes the student objective explicitly.
+stage: distill
+seed: 0
+teacher:
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/st/checkpoints/last.pt
+  format: framework
+  name: alicfm
+student:
+  name: hclt
+  params:
+    num_latents: 256
+    time_embedding_dim: 32
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: teacher_interpolant
+    params: {}
+  device: cuda:0
+  steps: 20000
+  batch_size: 64
+  lr: 0.003
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  source_nll_weight: 0.1
+  validation_population_metrics: false
+logging:
+  mode: online
+  project: flow2pc
+  name: st-alicfm-hclt-source-nll0.1
+output:
+  dir: /data/lthung/flow2pc/distill/source-nll-manual-v1/alicfm/st
+evaluation:
+  enabled: true
+  num_samples: 512
+  metric_samples: 512
+  seed: 2026
+  batch_size: 64
+  tolerance: 1.0e-05
+  max_nfe: 50000
+  solver: rk4
+  ode_steps: 100
+  metric_space: historical
+  source_split: all
+  reference_split: all

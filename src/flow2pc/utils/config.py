@@ -207,6 +207,8 @@ def resolve_config(raw, *, base):
                 "teacher_path_particles",
                 "validation_scope",
                 "validation_population_metrics",
+                "source_nll_weight",
+                "student_data",
             },
             {"sampler", "steps", "batch_size", "lr"},
         )
@@ -223,6 +225,20 @@ def resolve_config(raw, *, base):
         validation_scope(None, {"validation_scope": d.get("validation_scope", "observed_rows")})
         if type(d.get("validation_population_metrics", True)) is not bool:
             raise ValueError("validation_population_metrics must be boolean")
+        source_weight = d.get("source_nll_weight", 0.0)
+        if (type(source_weight) not in (int, float)
+                or not isfinite(source_weight) or source_weight < 0):
+            raise ValueError("distillation.source_nll_weight must be finite and nonnegative")
+        if "student_data" in d:
+            student_data = mapping(d["student_data"], "distillation.student_data",
+                                   {"name", "samples_per_time", "seed"},
+                                   {"name", "samples_per_time", "seed"})
+            if (student_data["name"] != "independent_knot"
+                    or type(student_data["samples_per_time"]) is not int
+                    or student_data["samples_per_time"] < 11
+                    or type(student_data["seed"]) is not int
+                    or not 0 <= student_data["seed"] < 2**32):
+                raise ValueError("student_data requires independent_knot, >=11 samples per time and an unsigned seed")
 
         for key in ("steps", "batch_size"):
             if type(d[key]) is not int or d[key] < 1:

@@ -1,4 +1,4 @@
-"""E3.2: frozen teacher/student ODE banks, same-time missing-coordinate tasks."""
+"""E3.2: direct-PC conditional queries versus numerical teacher conditionals."""
 
 import fcntl
 from pathlib import Path
@@ -14,6 +14,7 @@ from flow2pc.experiments.e3_2.conditional import ConditionalKDE, masks_for_dimen
 from flow2pc.experiments.e3_2.figures import save as save_figures
 from flow2pc.experiments.e3_2.metrics import aggregate, conditional_scores
 from flow2pc.experiments.io import write_csv
+from flow2pc.experiments.pc_queries import DirectPC
 from flow2pc.experiments.selection import digest, identity, implementation_identity, read_json, select_student
 from flow2pc.utils.checkpoint import atomic_json, atomic_path
 from flow2pc.utils.tracking import LocalLogger
@@ -31,7 +32,9 @@ def summarize(rows, settings):
     for role in ("teacher", "student"):
         result = {"role": role, "bank_size": max(settings["bank_sizes"]),
                   "conditional_draws": max(settings["conditional_draw_sizes"]),
-                  "bandwidth": settings["primary_bandwidth"]}
+                  "bandwidth": settings["primary_bandwidth"],
+                  "inference_method": "direct_pc" if role == "student" else "ode_kde",
+                  "fit_bank_used": role == "teacher", "bandwidth_used": role == "teacher"}
         for metric in METRICS:
             means = []
             for seed in settings["seeds"]:
@@ -42,8 +45,9 @@ def summarize(rows, settings):
                 # Mean interval score averages levels; other scores repeat by level.
                 if metric == "mean_interval_score":
                     chosen = [r for r in primary if r["role"] == role and r["seed"] == seed]
-                if chosen:
-                    means.append(float(np.mean([r[key] for r in chosen])))
+                values = [r[key] for r in chosen if r[key] is not None]
+                if values:
+                    means.append(float(np.mean(values)))
             result[metric] = float(np.mean(means)) if means else None
             result[metric + "_mc_std"] = float(np.std(means)) if means else None
         result["uncertainty_note"] = "MC standard deviation only; repeated masked views are not independent test observations"
@@ -97,7 +101,8 @@ def _run(config, selection, output):
         representation = {"center": center.tolist(), "scale": scale.tolist(), "state_dim": dataset.dim,
                           "fit_scope": "observed training rows only", "projection": None,
                           "score_space": "hidden coordinates, training-standardized",
-                          "conditional_law": "Gaussian joint KDE conditioned analytically; evaluation-only smoothing"}
+                          "conditional_law": "teacher: analytically conditioned Gaussian KDE of ODE particles; student: direct PC conditional, no smoothing"}
+        direct_pc = DirectPC(student, dataset.preprocessing, center, scale, settings["kde_chunk_size"])
         representation_sha = identity(representation)
         atomic_json(output / "representation.json", {**representation, "sha256": representation_sha})
         atomic_json(output / "dataset_contract.json", dataset.contract())
@@ -120,19 +125,22 @@ def _run(config, selection, output):
         if not times:
             raise ValueError("No eligible reserved observations for E3.2; see dataset_audit.csv")
         logger = LocalLogger(output, config, append=(output / "metrics.jsonl").is_file())
-        logger.log({"e3_2/phase": "sampling_frozen_ODEs"})
-        print(f"E3.2 {config['teacher']['name']}/{config['dataset']}: {len(times)} times, {len(masks)} masks; frozen ODE banks", flush=True)
-        paths, plans, sampling = paired_banks(teacher, student, dataset, times, settings)
+        logger.log({"e3_2/phase": "teacher_ODE_and_direct_PC"})
+        print(f"E3.2 {config['teacher']['name']}/{config['dataset']}: {len(times)} times, {len(masks)} masks; teacher ODE, direct PC conditionals", flush=True)
+        paths, plans, sampling = paired_banks(teacher, student, dataset, times, settings, include_student=False)
         paths = {role: (values - center) / scale for role, values in paths.items()}
-        atomic_json(output / "sampling.json", {**sampling, "direct_pc_sampling": False,
+        atomic_json(output / "sampling.json", {**sampling, "direct_pc_sampling": True,
+                    "student_inference": "direct_pc", "student_nfe": 0,
+                    "student_initial_law": "the saved PC's own law; empirical source applies only to teacher",
                     "conditional_law": representation["conditional_law"],
                     "bandwidth_selection": "predeclared primary and sensitivity values; never chosen using test coverage",
-                    "smoothing_scope": "evaluation estimator only; teacher/student ODEs and initial law unchanged",
-                    "random_streams": "independent threshold / score-a / score-b; common random numbers across roles",
+                    "smoothing_scope": "teacher conditional KDE only; student is unsmoothed direct PC",
+                    "random_streams": "independent threshold / score-a / score-b and role streams",
                     "masks": [{"observed": o, "hidden": h} for o, h in masks]})
         rows, observations = [], []
         largest = max(settings["conditional_draw_sizes"])
         for position, index in enumerate(times):
+            pc_law = direct_pc.at(dataset.metadata.model_times[index])
             real = references[index]
             for seed, plan in plans.items():
                 for mask_number, (observed, hidden) in enumerate(masks):
@@ -142,13 +150,23 @@ def _run(config, selection, output):
                     for budget in settings["bank_sizes"]:
                         for bandwidth in settings["condition_bandwidths"]:
                             for role in ("teacher", "student"):
-                                estimator = ConditionalKDE(paths[role][position][plan["fit"][:budget]], observed, bandwidth)
+                                # Student has no fit-bank/bandwidth dependence.
+                                # Emit it once alongside the primary teacher
+                                # setting; flags distinguish comparison labels
+                                # from actual student inference inputs.
+                                if role == "student" and (budget != max(settings["bank_sizes"])
+                                                          or bandwidth != settings["primary_bandwidth"]):
+                                    continue
+                                estimator = (pc_law if role == "student" else
+                                             ConditionalKDE(paths[role][position][plan["fit"][:budget]], observed, bandwidth))
                                 groups = {n: [] for n in settings["conditional_draw_sizes"]}
                                 ess = []
                                 for row_index, target in enumerate(real):
-                                    mixture = estimator.condition(target[observed])
+                                    mixture = (estimator.condition(observed, target[observed]) if role == "student"
+                                               else estimator.condition(target[observed]))
                                     ess.append(mixture.effective_components)
-                                    streams = np.random.SeedSequence([seed, index, mask_number, row_index, 3202]).spawn(3)
+                                    streams = np.random.SeedSequence([seed, index, mask_number, row_index, 3202,
+                                                                     int(role == "student")]).spawn(3)
                                     threshold, a, b = [mixture.sample(largest, np.random.default_rng(s)) for s in streams]
                                     threshold_scores = mixture.log_prob(threshold, settings["kde_chunk_size"])
                                     validation_scores = mixture.log_prob(a, settings["kde_chunk_size"])
@@ -164,7 +182,9 @@ def _run(config, selection, output):
                                                 observations.append({"role": role, "seed": seed, "time_index": index,
                                                     "row_index": row_index, "mask_id": mask_id, "observed_dim": len(observed),
                                                     "hidden_dim": len(hidden), "effective_components": mixture.effective_components,
-                                                    "low_ess": mixture.effective_components < settings["min_effective_components"],
+                                                    "low_ess": (mixture.effective_components < settings["min_effective_components"]
+                                                                if mixture.effective_components is not None else None),
+                                                    "inference_method": "direct_pc" if role == "student" else "ode_kde",
                                                     "observed_value": float(target[observed[0]]),
                                                     "observed_quartile": int(np.searchsorted(boundaries, target[observed[0]], side="right")),
                                                     "hidden_value": float(target[hidden[0]]), "conditional_mean": float(a[:, 0].mean()),
@@ -175,10 +195,16 @@ def _run(config, selection, output):
                                                "physical_time": dataset.metadata.physical_times[index],
                                                "model_time": dataset.metadata.model_times[index], "mask_id": mask_id,
                                                "observed_dim": len(observed), "hidden_dim": len(hidden), "bank_size": budget,
-                                               "unique_fit_components": len(estimator.centers), "conditional_draws": draws,
-                                               "bandwidth": bandwidth, "effective_components_mean": float(np.mean(ess)),
-                                               "effective_components_min": float(np.min(ess)),
-                                               "low_ess_fraction": float(np.mean(np.array(ess) < settings["min_effective_components"])),
+                                               "unique_fit_components": len(estimator.centers) if role == "teacher" else None,
+                                               "conditional_draws": draws,
+                                               "inference_method": "direct_pc" if role == "student" else "ode_kde",
+                                               "fit_bank_used": role == "teacher", "bandwidth_used": role == "teacher",
+                                               "actual_fit_bank_size": budget if role == "teacher" else 0,
+                                               "actual_bandwidth": bandwidth if role == "teacher" else None,
+                                               "density_exact_under_model": role == "student",
+                                               "bandwidth": bandwidth, "effective_components_mean": float(np.mean(ess)) if role == "teacher" else None,
+                                               "effective_components_min": float(np.min(ess)) if role == "teacher" else None,
+                                               "low_ess_fraction": float(np.mean(np.array(ess) < settings["min_effective_components"])) if role == "teacher" else None,
                                                **value}
                                         rows.append(row)
                                         logger.log({"e3_2/" + k: v for k, v in row.items()})
@@ -211,15 +237,18 @@ def _run(config, selection, output):
         diagnostics = {"source_support": sampling["unique_source_rows_integrated"],
                        "source_law": sampling["initial_law"], "effective_component_threshold": settings["min_effective_components"],
                        "reliability_note": "small ESS flags sparse conditional support, not an automatic calibration verdict; no observations dropped",
-                       "density_note": "all probabilities/scores concern conditional KDE, not exact unsmoothed ODE density",
+                       "density_note": "teacher: conditional KDE; student: exact direct PC conditional density in hidden standardized coordinates",
+                       "student_ess": "N/A; finite KDE component ESS is not a PC support diagnostic",
+                       "student_fit_bank_and_bandwidth": "not used; bank_size/bandwidth retain the primary teacher comparison labels only",
                        "primary_bandwidth": settings["primary_bandwidth"],
                        "bandwidths_reported_without_test_selection": settings["condition_bandwidths"],
                        "high_hidden_dimension_warning": any(len(hidden) > 3 for _, hidden in masks)}
         atomic_json(output / "estimator_diagnostics.json", diagnostics)
-        result = {"schema_version": 1, "experiment": "e3_2", "method": config["teacher"]["name"], "dataset": config["dataset"],
+        result = {"schema_version": 2, "experiment": "e3_2", "method": config["teacher"]["name"], "dataset": config["dataset"],
                   "selection": selection, "summary": headline, "comparison": comparison,
                   "representation_sha256": representation_sha, "media": figures, "estimator_diagnostics": diagnostics,
-                  "interpretation": "retrospective same-time conditional KDE calibration; aggregate over conditions, not pointwise calibration or forecasting"}
+                  "student_inference": "direct_pc", "teacher_inference": "ode_kde",
+                  "interpretation": "retrospective same-time direct PC conditional calibration versus numerical teacher KDE; aggregate over conditions, not forecasting"}
         atomic_json(output / "results.json", result)
         for row in headline:
             logger.log({f"e3_2/summary/{row['role']}/{k}": v for k, v in row.items() if type(v) in (int, float)})
