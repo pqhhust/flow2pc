@@ -1,20 +1,22 @@
-# Student objective: frozen teacher velocity MSE only.
+# Selected historical student hyperparameters; current shared velocity-MSE trainer.
+# Applied to the newly pretrained teacher; this is not an exact historical sweep replay.
 stage: distill
 seed: 0
 teacher:
-  checkpoint: /data/lthung/flow2pc/framework/pretrain/alicfm/cite5/fold1-seed42/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/cite5/checkpoints/last.pt
+  name: alicfm
 student:
   name: hclt
   params:
-    num_latents: 128
-    time_embedding_dim: 32
+    num_latents: 256
+    time_embedding_dim: 64
     time_feature_seed: 0
 distillation:
   sampler:
     name: teacher_interpolant
     params: {}
   device: cuda:0
-  steps: 20000
+  steps: 50000
   batch_size: 64
   lr: 0.001
   validate_every: 1000
@@ -23,14 +25,13 @@ distillation:
   validation_batches: 4
   validation_batch_size: 128
   resume: true
+  validation_scope: observed_rows
 logging:
   mode: online
   project: flow2pc
-  name: cite5-hclt-h128-f32-lr0.001-b64-seed0
+  name: cite5-alicfm-hclt-h256-f64-lr0.001-b64-n50000-s0
 output:
-  dir: /data/lthung/flow2pc/framework/distill/alicfm/cite5/hclt-h128-f32-lr0.001-b64-seed0
-
-# Post-training ODE evaluation and images; never contributes to the student loss.
+  dir: /data/lthung/flow2pc/distill/alicfm/selected-students/cite5/cite5-alicfm-hclt-h256-f64-lr0.001-b64-n50000-s0
 evaluation:
   enabled: true
   num_samples: 2048

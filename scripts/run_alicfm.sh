@@ -4,7 +4,7 @@ set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
   echo "Usage: bash scripts/run_alicfm.sh pretrain|distill|evaluate-teacher|evaluate-student DATASET [CLI options]" >&2
-  echo "Datasets: cite5 cite50 cite100 multi5 multi50 multi100 eb st cell_tracking knot gom beijing" >&2
+  echo "Datasets: cite5 cite50 cite100 multi5 multi50 multi100 eb st cell_tracking knot gom beijing arch sphere lidar" >&2
   exit 2
 fi
 
@@ -19,7 +19,7 @@ case "$stage" in
   *) echo "Unknown stage: $stage" >&2; exit 2 ;;
 esac
 case "$dataset" in
-  cite5|cite50|cite100|multi5|multi50|multi100|eb|st|cell_tracking|knot|gom|beijing) ;;
+  cite5|cite50|cite100|multi5|multi50|multi100|eb|st|cell_tracking|knot|gom|beijing|arch|sphere|lidar) ;;
   *) echo "Unknown dataset: $dataset" >&2; exit 2 ;;
 esac
 

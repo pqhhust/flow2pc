@@ -17,6 +17,7 @@ class LocalLogger:
         self.mode = config["logging"]["mode"]
         self.resilient = (config.get("training", {}).get("protocol") in ("marginal", "endpoints")
                           or config.get("stage") == "distill"
+                          or config.get("experiment") is not None
                           or config.get("model", {}).get("name") in ("otpfm", "mfm", "mmfm"))
         self.tracking_errors = []
         self.offline = False
@@ -87,7 +88,11 @@ class LocalLogger:
                         self.offline = True
                         try:
                             self.run = wandb.init(**fallback, id=metadata["id"], config=config, dir=str(directory), **init_options)
-                        except (wandb.errors.CommError, TimeoutError, ConnectionError) as offline_error:
+                        except Exception as offline_error:
+                            # A timed-out online init may leave the SDK run ID
+                            # busy, raising ServerResponseError on offline init.
+                            # This is logging-only: retain local metrics/artifacts
+                            # instead of aborting a valid training worker.
                             self.tracking_failed("offline startup", offline_error)
                 self._finish_run = self.run
                 if self.resilient and self.run is not None:
@@ -204,4 +209,3 @@ def log_population_metrics(logger, report, *, namespace="eval", output=None):
             with logger.remote("population comparison images"):
                 logger.run.log({f"{namespace}/{key}": wandb.Image(value)
                                 for key, value in json.loads(path.read_text()).items()})
-

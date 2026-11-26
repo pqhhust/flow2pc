@@ -1,0 +1,35 @@
+# Evaluation only. Uses existing frozen checkpoints; never retrains.
+stage: evaluate
+experiment: e3_1
+dataset: cite100
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/cite100/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/otpfm/selected-students/cite100
+  metric: auto
+device: cuda:0
+evaluation:
+  student_inference: direct_pc
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  bank_sizes:
+  - 5000
+  - 10000
+  source_split: all
+  reference_split: protocol
+  hdr_representation: pca2
+logging:
+  mode: online
+  project: flow2pc
+  name: cite100-otpfm-e3_1-selected-emd-direct-pc
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_1/direct-pc-v1/otpfm/cite100

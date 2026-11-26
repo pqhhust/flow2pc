@@ -99,5 +99,9 @@ def inverse(values, preprocessing, *, retain_whitening=False):
     result = inverse_minmax(values.float(), preprocessing)
     if preprocessing["whiten"] and not retain_whitening:
         scaler = scaler_from_statistics(preprocessing)
-        result = torch.from_numpy(scaler.inverse_transform(result.cpu().numpy()))
+        # Rollouts have shape [time, cells, features]; sklearn accepts rows.
+        # Keep each feature vector and the native float32 operation order intact.
+        shape = result.shape
+        rows = result.reshape(-1, shape[-1]).cpu().numpy()
+        result = torch.from_numpy(scaler.inverse_transform(rows)).reshape(shape)
     return result.double()

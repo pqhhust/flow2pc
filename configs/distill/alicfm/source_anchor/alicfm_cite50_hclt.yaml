@@ -1,0 +1,51 @@
+# Source-NLL pilot: selected teacher/architecture/LR/steps/query policy retained.
+# Full state dimension; no PCA refit or projection. Best.pt uses validation velocity MSE.
+# Intermediate population diagnostics disabled; final evaluation/images retained.
+# Final benchmark evaluation settings match the selected dataset recipe exactly.
+stage: distill
+seed: 0
+teacher:
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/cite50/checkpoints/last.pt
+  name: alicfm
+student:
+  name: hclt
+  params:
+    num_latents: 256
+    time_embedding_dim: 64
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: teacher_interpolant
+    params: {}
+  device: cuda:0
+  steps: 50000
+  batch_size: 64
+  lr: 0.001
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  validation_scope: observed_rows
+  source_nll_weight: 0.01
+  validation_population_metrics: false
+logging:
+  mode: online
+  project: flow2pc
+  name: cite50-alicfm-hclt-source-nll0.01
+output:
+  dir: /data/lthung/flow2pc/distill/source-nll-manual-v2/alicfm/cite50
+evaluation:
+  enabled: true
+  num_samples: 2048
+  metric_samples: 2048
+  batch_size: 64
+  seed: 2026
+  solver: dopri5
+  tolerance: 1.0e-05
+  ode_steps: 100
+  max_nfe: 50000
+  metric_space: historical
+  source_split: all
+  reference_split: all

@@ -1,0 +1,20 @@
+{
+  "data": {
+    "name": "cell_tracking",
+    "root": "/data/lthung/ali-cfm-data",
+    "split_seed": 2026,
+    "params": {
+      "normalise": true,
+      "whiten": false,
+      "validation_fraction": 0.1,
+      "test_fraction": 0.05
+    }
+  },
+  "time_input": "global",
+  "velocity_time_units": "model",
+  "cfm_coordinates": "model",
+  "field_activation": "selu",
+  "generator_activation": "elu",
+  "distillation_sampler": "border_ot",
+  "checkpoint_sha256": "d2c071a2b2fea1931c5c515d4dbc35e8f436043f58322fa0c8083b3503049129"
+}

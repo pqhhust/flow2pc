@@ -1,0 +1,42 @@
+# Evaluation only. Uses existing frozen checkpoints; never retrains.
+stage: evaluate
+experiment: e3_1
+dataset: cell_tracking
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/cell_tracking/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/otpfm/selected-students/cell_tracking
+  metric: auto
+device: cuda:0
+evaluation:
+  student_inference: direct_pc
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  bank_sizes:
+  - 5000
+  - 10000
+  source_split: all
+  reference_split: protocol
+  hdr_representation: auto
+  time_indices:
+  - 0
+  - 24
+  - 49
+  - 74
+  - 99
+  - 114
+logging:
+  mode: online
+  project: flow2pc
+  name: cell_tracking-otpfm-e3_1-selected-emd-direct-pc
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_1/direct-pc-v1/otpfm/cell_tracking

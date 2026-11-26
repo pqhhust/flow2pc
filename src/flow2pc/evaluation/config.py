@@ -2,6 +2,36 @@
 
 import math
 
+TRANSPORT_W2_PROTOCOL = "transport_ode_w2_v1"
+TRANSPORT_W2_POPULATIONS = "truncate both subsets to first min(N,M) rows after configured subset selection"
+
+
+def transport_w2_complete(metrics, heldout_indices):
+    """Torch-free guard against accepting an old W1 report as transport W2."""
+    if not isinstance(metrics, dict) or not isinstance(metrics.get("protocol"), dict):
+        return False
+    protocol = metrics.get("protocol", {})
+    if (protocol.get("metric_protocol_version") != TRANSPORT_W2_PROTOCOL
+            or protocol.get("primary_distance") != "w2"
+            or protocol.get("units") != "raw_feature_coordinates"
+            or protocol.get("w2_population_policy") != TRANSPORT_W2_POPULATIONS
+            or protocol.get("time_rule") != "exact observation times"):
+        return False
+    candidates = metrics.get("scores", [])
+    if not isinstance(candidates, list) or any(not isinstance(r, dict) for r in candidates):
+        return False
+    rows = [r for r in candidates if r.get("held_out")]
+    if any(type(r.get("index")) is not int for r in rows):
+        return False
+    if sorted(r.get("index", -1) for r in rows) != sorted(heldout_indices) or not rows:
+        return False
+    values = [r.get("teacher_w2") for r in rows]
+    score = metrics.get("teacher_heldout_w2")
+    if any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in [score, *values]):
+        return False
+    return math.isclose(sum(values) / len(values), score, rel_tol=1e-12, abs_tol=1e-12)
+
+
 DEFAULTS = dict(
     enabled=False,
     num_samples=512,

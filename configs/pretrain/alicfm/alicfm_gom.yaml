@@ -1,5 +1,9 @@
-# Best completed sweep run: gom-h256-glr5e-05-vlr0.0001-ts0.01-reg0.001-border-vanilla-s42-fd1fc13102
-# teacher_heldout_emd: 0.1339033697906832; 512/512 completed.
+# Verified W2 sweep winner: gom-h256-glr5e-05-vlr0.0001-ts0.01-reg0.001-border-vanilla-s42-fd1fc13102
+# Selected by mean raw-coordinate W2 across the four temporal validation holdouts.
+# teacher_heldout_w2: 0.14478567400075076; 512/512 re-evaluated (2026-11-13).
+# Also the W1 winner; teacher_heldout_emd: 0.13390336979068315.
+# Retained teacher CFM and generator tensors match this winner exactly.
+# W2 ranking: /data/lthung/flow2pc/alicfm-transport/sweep-512/summary.csv
 # Exact scientific settings from the saved resolved_config.yaml.
 # Selected existing checkpoint and selection scope: docs/selected_teachers.json
 stage: pretrain
@@ -50,6 +54,7 @@ logging:
 output:
   dir: /data/lthung/flow2pc/pretrain/alicfm/gom/best-config-seed42
 evaluation:
+  # GOM evaluation uses teacher_heldout_w2 as primary; W1 remains a diagnostic.
   enabled: true
   num_samples: 0
   metric_samples: 1024

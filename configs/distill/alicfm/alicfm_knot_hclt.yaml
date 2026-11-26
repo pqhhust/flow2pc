@@ -1,13 +1,18 @@
-# Student objective: frozen teacher velocity MSE only.
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/alicfm/knot/best_config.yaml
+# Selected best.pt step: 20000; validation score: 0.00222870026482.
+# Retains the winning run output directory and its saved evaluation protocol.
 stage: distill
 seed: 0
 teacher:
-  checkpoint: /data/lthung/flow2pc/framework/pretrain/alicfm/knot/seed42/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/knot/checkpoints/last.pt
+  format: framework
+  name: alicfm
 student:
   name: hclt
   params:
     num_latents: 128
-    time_embedding_dim: 32
+    time_embedding_dim: 128
     time_feature_seed: 0
 distillation:
   sampler:
@@ -16,7 +21,7 @@ distillation:
   device: cuda:0
   steps: 20000
   batch_size: 64
-  lr: 0.001
+  lr: 0.003
   validate_every: 1000
   checkpoint_every: 1000
   log_every: 100
@@ -26,21 +31,19 @@ distillation:
 logging:
   mode: online
   project: flow2pc
-  name: knot-hclt-h128-f32-lr0.001-b64-seed0
+  name: knot-alicfm-hclt-h128-f128-lr0.003-b64-n20000-s0-4207d29b6d6a
 output:
-  dir: /data/lthung/flow2pc/framework/distill/alicfm/knot/hclt-h128-f32-lr0.001-b64-seed0
-
-# Post-training ODE evaluation and images; never contributes to the student loss.
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/alicfm/knot/knot-alicfm-hclt-h128-f128-lr0.003-b64-n20000-s0-4207d29b6d6a
 evaluation:
   enabled: true
   num_samples: 0
   metric_samples: 512
-  batch_size: 64
   seed: 2026
-  solver: rk4
+  batch_size: 64
   tolerance: 1.0e-05
-  ode_steps: 100
   max_nfe: 50000
+  solver: rk4
+  ode_steps: 100
   metric_space: historical
   source_split: all
   reference_split: all

@@ -66,7 +66,7 @@ def test_transport_paths_and_recipe(dataset, recipe):
 
 
 @pytest.mark.parametrize("arguments,reason", [
-    (["distill", "eb", "--method", "otpfm"], "conditional tuple sampler"),
+    (["distill", "gom", "--method", "otpfm", "--recipe", "kl"], "nonlinear KL/MMD"),
     (["both", "eb", "--validate-only"], "Validate stages separately"),
 ])
 def test_unsupported_protocols_fail_before_execution(arguments, reason):
@@ -85,6 +85,28 @@ def test_ali_transport_uses_the_temporal_validation_preset(dataset):
     assert overrides(commands[1])["teacher.checkpoint"] == str(checkpoint)
     assert Path(commands[0][3]).name == f"alicfm_{dataset}.yaml"
     assert Path(commands[1][3]).name == f"alicfm_{dataset}_hclt.yaml"
+
+
+@pytest.mark.parametrize("dataset", launcher.ALI_DATASETS)
+def test_otp_stages_use_the_same_frozen_teacher_and_conditional_sampler(dataset):
+    import yaml
+
+    args = launcher.parser().parse_args(["both", dataset, "--method", "otpfm", "--dry-run"])
+    commands, _, checkpoint = launcher.build_commands(args)
+    config = yaml.safe_load(Path(commands[1][3]).read_text())
+    assert config["teacher"]["name"] == "otpfm"
+    assert config["distillation"]["sampler"]["name"] == "otpfm_conditional"
+    assert overrides(commands[1])["teacher.checkpoint"] == str(checkpoint)
+    assert Path(commands[1][3]).name == f"otpfm_{dataset}_hclt.yaml"
+
+
+@pytest.mark.parametrize("dataset", launcher.TRANSPORT_DATASETS)
+@pytest.mark.parametrize("recipe", ("w2", "w2inf"))
+def test_native_otp_uses_selected_best_not_last(dataset, recipe):
+    args = launcher.parser().parse_args(["both", dataset, "--method", "otpfm", "--recipe", recipe, "--dry-run"])
+    commands, _, checkpoint = launcher.build_commands(args)
+    assert checkpoint.name == "best.pt"
+    assert overrides(commands[1])["teacher.checkpoint"] == str(checkpoint)
 
 
 def test_failed_pretrain_does_not_start_student(tmp_path, monkeypatch):

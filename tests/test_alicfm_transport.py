@@ -14,7 +14,9 @@ import torch
 
 from flow2pc.data.real.transport import TransportMarginals
 from flow2pc.data.restore import restore_dataset
-from flow2pc.evaluation.config import resolve_evaluation
+from flow2pc.evaluation.config import (
+    resolve_evaluation, TRANSPORT_W2_PROTOCOL, TRANSPORT_W2_POPULATIONS, transport_w2_complete,
+)
 from flow2pc.evaluation.runner import evaluate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +65,8 @@ def test_evaluation_ranks_all_four_holdouts_not_only_one(tmp_path):
     heldout = [row for row in result["scores"] if row["held_out"]]
     assert [row["index"] for row in heldout] == [1, 3, 5, 7]
     assert result["teacher_heldout_emd"] == pytest.approx(np.mean([r["teacher_emd"] for r in heldout]))
+    assert result["teacher_heldout_w2"] == pytest.approx(np.mean([r["teacher_w2"] for r in heldout]))
+    assert transport_w2_complete(result, [1, 3, 5, 7])
     assert (tmp_path / "eval/teacher_ode_marginals.png").is_file()
 
 
@@ -113,6 +117,82 @@ def test_sweep_has_512_unique_configs_per_dataset_and_evaluation_recovery(tmp_pa
     command = module.command_for(run, tmp_path / "config.yaml")
     assert command[-2:] == ["--evaluate", "teacher"]
     assert "distill" not in json.dumps(command)
+
+
+def test_transport_w2_uses_squared_cost_root_and_native_equal_count_policy():
+    from flow2pc.evaluation.runner import population_scores
+
+    real, predicted = torch.tensor([[0.], [2.], [100.]]), torch.zeros(2, 1)
+    scores = population_scores(real, predicted, transport=True)
+    assert scores["emd"] == pytest.approx(34.)  # Full unequal-population W1.
+    assert scores["w2"] == pytest.approx(2 ** .5)  # First two rows, squared costs, root.
+    assert "w2" not in population_scores(real, predicted, transport=False)
+
+
+def test_sweep_ranks_by_w2_even_when_w1_ranking_disagrees(tmp_path, sweep_module):
+    module = sweep_module
+    runs = []
+    for name, w1, w2 in (("best-W1", .1, 2.), ("best-W2", .5, 1.)):
+        run = module.Run("gom", name, {}, tmp_path / "gom" / name, {}, status="complete")
+        run.metrics = {"teacher_heldout_emd": w1, "teacher_heldout_w2": w2,
+                       "scores": [{"index": i, "teacher_emd": w1, "teacher_w2": w2}
+                                  for i in [1, 3, 5, 7]]}
+        runs.append(run)
+    module.summary(SimpleNamespace(output_root=tmp_path, datasets=["gom"]), runs, [], "complete")
+    result = json.loads((tmp_path / "gom/best_models.json").read_text())
+    assert result["selection_metric"] == "teacher_heldout_w2"
+    assert result["best"][0]["run"] == "best-W2"
+
+
+def test_evaluation_only_sweep_never_launches_training_for_missing_checkpoint(tmp_path, sweep_module):
+    module = sweep_module
+    run = module.Run("gom", "missing", {}, tmp_path / "missing", {}, evaluate_only=True)
+    module.prepare(run, retry_incomplete=True)
+    assert run.status == "blocked" and "training is disabled" in run.error
+    with pytest.raises(ValueError, match="refuses to launch training"):
+        module.command_for(run, tmp_path / "config.yaml")
+    run.action = "evaluate"
+    assert module.command_for(run, tmp_path / "config.yaml")[-2:] == ["--evaluate", "teacher"]
+
+
+def test_old_w1_prediction_cache_is_reused_only_with_its_exact_binding(tmp_path, monkeypatch):
+    from flow2pc.evaluation import runner
+    from flow2pc.utils.checkpoint import identity
+
+    dataset = gom_bundle(tmp_path)
+    class ZeroField(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.anchor = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+            self.manifest = {"method": "fixture", "checkpoint_sha256": "constant"}
+
+        def ode_velocity(self, time, values):
+            return torch.zeros_like(values)
+
+    model = ZeroField()
+    settings = resolve_evaluation({"enabled": True, "solver": "rk4", "num_samples": 8,
+                                   "metric_samples": 8, "ode_steps": 8, "metric_space": "raw"})
+    original = runner.evaluate(model, dataset, settings, tmp_path / "reference")
+    protocol = dict(original["protocol"])
+    for key in ("metric_protocol_version", "primary_distance", "primary_metric", "w2_formula",
+                "w2_population_policy", "time_rule", "sampler"):
+        protocol.pop(key)
+    old_identity = identity({"teacher": model.manifest, "dataset": dataset.contract(), "protocol": protocol})
+    cache_path = tmp_path / "reference/teacher_predictions.pt"
+    cache = torch.load(cache_path, weights_only=True)
+    cache["binding_sha256"] = old_identity
+    torch.save(cache, cache_path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A matching W1 rollout should not require another ODE solve")
+
+    monkeypatch.setattr(runner, "rollout", forbidden)
+    result = runner.evaluate(model, dataset, settings, tmp_path / "new", reference_dir=tmp_path / "reference")
+    assert result["execution"]["prediction_cache_binding"] == "legacy_W1_binding"
+    assert result["teacher_heldout_w2"] == original["teacher_heldout_w2"]
+    with pytest.raises(AssertionError, match="matching W1"):
+        runner.evaluate(model, dataset, {**settings, "seed": 99}, tmp_path / "changed",
+                        reference_dir=tmp_path / "reference")
 
 
 def test_transport_logger_keeps_local_metrics_on_wandb_communication_failure(tmp_path, monkeypatch):
@@ -189,13 +269,23 @@ def test_wandb_publication_failure_does_not_invalidate_saved_teacher(tmp_path, m
     image.write_bytes(b"existing figure; never decoded")
     for name in ("status.json", "eval/status.json"):
         (output / name).write_text(json.dumps({"status": "failed", "error": "W&B API service timed out"}))
-    metrics = {"protocol": {"metric_space": "raw"}, "teacher_heldout_emd": 0.5,
-               "scores": [{"index": i, "held_out": True, "teacher_emd": 0.5} for i in [1, 3, 5, 7]]}
+    metrics = {"protocol": {"metric_space": "raw", "metric_protocol_version": TRANSPORT_W2_PROTOCOL,
+                            "primary_distance": "w2", "units": "raw_feature_coordinates",
+                            "w2_population_policy": TRANSPORT_W2_POPULATIONS,
+                            "time_rule": "exact observation times"},
+               "teacher_heldout_emd": 0.5, "teacher_heldout_w2": 0.8,
+               "scores": [{"index": i, "held_out": True, "teacher_emd": 0.5, "teacher_w2": 0.8}
+                          for i in [1, 3, 5, 7]]}
     (output / "eval/metrics.json").write_text(json.dumps(metrics))
     (output / "eval/media.json").write_text(json.dumps({"teacher_marginals": str(image)}))
     run = module.Run("gom", "fixture", config, output, {})
     module.prepare(run)
     assert run.status == "complete" and run.tracking_status == "pending_sync"
+    metrics["protocol"].pop("metric_protocol_version")
+    (output / "eval/metrics.json").write_text(json.dumps(metrics))
+    run = module.Run("gom", "fixture", config, output, {})
+    module.prepare(run)
+    assert run.status == "pending" and run.action == "evaluate"
     with pytest.raises(ValueError, match="Refusing to archive"):
         module.archive_incomplete(run)
 

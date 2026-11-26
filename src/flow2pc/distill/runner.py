@@ -1,4 +1,4 @@
-"""Frozen-teacher distillation runners for ALI-CFM and MFM."""
+"""Frozen-teacher queries with shared student velocity-MSE training."""
 
 import csv
 import json
@@ -14,7 +14,9 @@ import yaml
 from flow2pc.data.metric_registry import load_dataset
 from flow2pc.data.restore import restore_dataset
 from flow2pc.pretrain.models.alicfm.query_policy import resolve_sampler
-from flow2pc.distill.sampling import sample_ali_batch, sample_mfm_batch, sample_mmfm_batch, velocity_mse
+from flow2pc.distill.sampling import sample_batch, sample_mfm_batch, sample_mmfm_batch, velocity_mse
+from flow2pc.distill.objectives import anchored_velocity_loss, validate_source_density
+from flow2pc.distill.performance import StepTimer, population_diagnostic_indices
 from flow2pc.distill.student import (
     build_optimizer,
     build_student,
@@ -50,8 +52,23 @@ def prepare(config):
         legacy_metadata=source.get("legacy_metadata"),
         generator_checkpoint=source.get("generator_checkpoint"),
     )
-    dataset = restore_dataset(teacher.manifest["dataset"], teacher.preprocessing)
-    saved_sampler = resolve_sampler(teacher.manifest, settings["sampler"])
+    dataset = restore_dataset(
+        teacher.manifest["dataset"], teacher.preprocessing,
+        data_root=source.get("data_root"),
+    )
+    method = teacher.manifest["method"]
+    if source.get("name", method) != method:
+        raise ValueError("Configured teacher name differs from the checkpoint method")
+    if method == "otpfm":
+        from flow2pc.distill.otpfm_sampling import OTPFMConditionalSampler
+
+        saved_sampler = OTPFMConditionalSampler(
+            teacher, dataset, settings["sampler"], source["checkpoint"]
+        )
+    elif method == "alicfm":
+        saved_sampler = resolve_sampler(teacher.manifest, settings["sampler"])
+    else:
+        raise ValueError(f"Use the method-specific config for {method} distillation")
     return teacher, dataset, saved_sampler
 
 
@@ -67,6 +84,8 @@ def _run_ali(config):
     validate_resources(dataset, config.get("evaluation", {"enabled": False}))
     cfg = config["distillation"]
     device = next(teacher.parameters()).device
+    source_weight = cfg.get("source_nll_weight", 0.0)
+    monitor_source = "source_nll_weight" in cfg
     output = Path(config["output"]["dir"])
     if output.exists() and not cfg.get("resume", False):
         raise FileExistsError(
@@ -77,12 +96,15 @@ def _run_ali(config):
             "Partial output has no resume checkpoint; choose a fresh output directory"
         )
     seed_everything(config["seed"])
+    from flow2pc.data.student_pools import training_dataset
+
+    student_data, student_data_contract = training_dataset(dataset, cfg)
     pools = [
-        dataset.get_marginal(i, "train").materialize()
+        student_data.get_marginal(i, "train").materialize()
         for i in range(len(dataset.metadata.model_times))
     ]
     validation_pools = [
-        dataset.get_marginal(i, "val").materialize() for i in range(len(pools))
+        student_data.get_marginal(i, "val").materialize() for i in range(len(pools))
     ]
     clamp_derivative = dataset.metadata.name == "cell_tracking"
     binding = {
@@ -99,10 +121,26 @@ def _run_ali(config):
         "student": config["student"],
         "seed": config["seed"],
         "settings": {k: v for k, v in cfg.items() if k not in ("resume", "device")},
-        "sampler": sampler,
-        "objective": "teacher_velocity_MSE_only",
+        "sampler": sampler if isinstance(sampler, str) else sampler.contract,
+        "objective": ("teacher_velocity_MSE_plus_initial_NLL" if source_weight > 0
+                      else "teacher_velocity_MSE_only"),
         "clamp_scale_derivative": clamp_derivative,
     }
+    if student_data_contract is not None:
+        binding["student_training_data"] = student_data_contract
+    if monitor_source:
+        binding["source_density_protocol"] = {
+            "weight": source_weight, "normalization": "mean negative log probability per state coordinate",
+            "coordinate_space": "saved teacher-input coordinates",
+            "model_time": dataset.metadata.model_times[0], "training_split": "train",
+            "validation_split": "val", "time_index": 0,
+            "checkpoint_selection": "unchanged dataset-specific validation velocity MSE",
+            "teacher_velocity_queries": "unchanged; independent source RNG stream",
+        }
+        if student_data_contract is not None:
+            binding["source_density_protocol"]["population_contract"] = "student_training_data"
+            binding["source_density_protocol"]["teacher_velocity_queries"] = (
+                "unchanged sampler algorithm; explicit student_training_data marginal populations")
     temporal_validation = temporal_validation_contract(dataset, cfg)
     if temporal_validation is not None:
         # Do not compare a resumed row-validation best score with the new
@@ -114,6 +152,10 @@ def _run_ali(config):
         if last_path.exists()
         else None
     )
+    execution_metadata = (
+        {"sampler_execution_sha256": sampler.contract["implementation_sha256"]}
+        if teacher.manifest["method"] == "otpfm" else {}
+    )
     if previous is not None:
         if previous["binding"].get("validation_protocol") != temporal_validation:
             raise ValueError(
@@ -121,7 +163,15 @@ def _run_ali(config):
                 "rather than comparing scores from different validation protocols"
             )
         if previous["binding"] != binding:
-            raise ValueError("Resume teacher/data/model/training binding changed")
+            from flow2pc.distill.otpfm_compat import compatible_binding
+
+            if (teacher.manifest["method"] != "otpfm"
+                    or not compatible_binding(previous["binding"], binding)):
+                raise ValueError("Resume teacher/data/model/training binding changed")
+            # Preserve the original identity and its best.pt selection history.
+            # Record the current execution source separately, without rewriting
+            # old checkpoints or accepting changed data, alpha, coupling or loss.
+            binding = previous["binding"]
         if previous.get("best_step") is not None:
             selected_path = output / "checkpoints/best.pt"
             if not selected_path.is_file():
@@ -147,12 +197,26 @@ def _run_ali(config):
     ).to(device)
     optimizer, scheduler = build_optimizer(student, cfg["lr"], cfg["steps"])
     rng = torch.Generator().manual_seed(config["seed"] + 1000)
+    source_rng = torch.Generator().manual_seed(config["seed"] + 30000)
+    source_validation = None
+    best_source_nll = None
+    if monitor_source:
+        if not len(pools[0]) or not len(validation_pools[0]):
+            raise ValueError("Source-NLL pilot requires nonempty initial train and val cells; no test fallback")
+        limit = cfg.get("validation_batches", 4) * cfg.get("validation_batch_size", 128)
+        source_order = torch.randperm(len(validation_pools[0]), generator=torch.Generator().manual_seed(config["seed"] + 40000))
+        source_validation = validation_pools[0][source_order[:limit]]
     best, best_step, start = float("inf"), None, 1
     if previous:
         student.load_state_dict(previous["state_dict"], strict=True)
         optimizer.load_state_dict(previous["optimizer"])
         scheduler.load_state_dict(previous["scheduler"])
         rng.set_state(previous["rng"])
+        if monitor_source:
+            if "source_rng" not in previous:
+                raise ValueError("Anchored resume checkpoint is missing its source RNG state")
+            source_rng.set_state(previous["source_rng"])
+            best_source_nll = previous.get("best_source_nll_per_dimension")
         torch.set_rng_state(previous["torch_rng"])
         if device.type == "cuda" and previous.get("cuda_rng") is not None:
             torch.cuda.set_rng_state(previous["cuda_rng"], device)
@@ -169,6 +233,8 @@ def _run_ali(config):
         teacher, dataset, validation_pools, cfg, config["seed"] + 100000, sampler
     )
     output.mkdir(parents=True, exist_ok=True)
+    if student_data_contract is not None:
+        atomic_json(output / "student_training_data.json", student_data_contract)
     with atomic_path(output / "resolved_config.yaml") as temporary:
         temporary.write_text(yaml.safe_dump(config, sort_keys=False))
     model_config = {
@@ -185,21 +251,41 @@ def _run_ali(config):
             "schema_version": 1,
             "artifact_type": "student",
             **binding,
+            **execution_metadata,
             "model_config": model_config,
             "binding_sha256": identity(binding),
         },
     )
     atomic_json(output / "status.json", {"status": "running"})
+    is_otpfm = teacher.manifest["method"] == "otpfm"
+    diagnostic_view = teacher_diagnostic_cache = None
+    if is_otpfm and cfg.get("validation_population_metrics", True):
+        from flow2pc.evaluation.teacher_cache import FrozenTeacherDiagnosticCache
+
+        teacher_diagnostic_cache = FrozenTeacherDiagnosticCache()
     logger = None
     try:
         logger = LocalLogger(output, config, append=previous is not None)
+        if monitor_source and previous is None:
+            initial_nll = validate_source_density(
+                student, source_validation, dataset.metadata.model_times[0],
+                cfg.get("validation_batch_size", 128))
+            atomic_json(output / "source_density_initial.json", {
+                "source_nll_per_dimension": initial_nll,
+                "time_index": 0, "model_time": dataset.metadata.model_times[0],
+                "source_split": "val", "cell_count": len(source_validation),
+                "coordinate_space": "saved teacher-input coordinates", "step": 0,
+            })
+            logger.log({"train/step": 0, "validation/source_nll_per_dimension": initial_nll,
+                        "validation/source_cell_count": len(source_validation)})
 
         def checkpoint(step):
-            return {
+            payload = {
                 "state_dict": {
                     k: v.detach().cpu() for k, v in student.state_dict().items()
                 },
                 "binding": binding,
+                **execution_metadata,
                 "model_config": model_config,
                 "step": step,
                 "optimizer": optimizer.state_dict(),
@@ -212,60 +298,100 @@ def _run_ali(config):
                 "best_selection_score": best,
                 "best_step": best_step,
             }
+            if monitor_source:
+                payload.update(source_rng=source_rng.get_state(),
+                               best_source_nll_per_dimension=best_source_nll)
+            return payload
 
         # Allow an OOM on the first update to resume without abandoning this run.
         if previous is None:
             save(last_path, checkpoint(0))
         for step in range(start, cfg["steps"] + 1):
+            validating = (step == 1 or step % cfg.get("validate_every", 1000) == 0
+                          or step == cfg["steps"])
+            timer = StepTimer(device, enabled=is_otpfm and (
+                validating or step % cfg.get("log_every", 100) == 0
+            ))
             student.train()
-            batch = sample_ali_batch(
-                teacher, dataset, pools, cfg["batch_size"], rng, sampler
+            batch = sample_batch(
+                teacher, dataset, pools, cfg["batch_size"], rng, sampler,
+                timer=timer if is_otpfm else None,
             )
-            optimizer.zero_grad(set_to_none=True)
-            loss = velocity_mse(student, teacher, batch)
-            if not torch.isfinite(loss):
-                raise FloatingPointError("Non-finite distillation velocity MSE")
-            loss.backward()
-            grad = torch.nn.utils.clip_grad_norm_(
-                student.parameters(), 1.0, error_if_nonfinite=True
-            )
-            optimizer.step()
-            scheduler.step()
+            with timer.measure("student_update"):
+                optimizer.zero_grad(set_to_none=True)
+                source = (pools[0][torch.randint(len(pools[0]), (cfg["batch_size"],), generator=source_rng)]
+                          if source_weight > 0 else None)
+                loss, velocity_loss, source_nll = anchored_velocity_loss(
+                    student, teacher, batch, weight=source_weight, source=source,
+                    model_time=dataset.metadata.model_times[0])
+                if not torch.isfinite(loss):
+                    raise FloatingPointError("Non-finite student distillation objective")
+                loss.backward()
+                grad = torch.nn.utils.clip_grad_norm_(
+                    student.parameters(), 1.0, error_if_nonfinite=True
+                )
+                optimizer.step()
+                scheduler.step()
             row = {
                 "train/step": step,
-                "train/velocity_mse": float(loss.detach()),
+                "train/velocity_mse": float(velocity_loss.detach()),
                 "train/gradient_norm_before_clip": float(grad),
                 "train/learning_rate": optimizer.param_groups[0]["lr"],
             }
-            if (
-                step == 1
-                or step % cfg.get("validate_every", 1000) == 0
-                or step == cfg["steps"]
-            ):
-                scores = validate(
-                    student, groups, energy, cfg.get("validation_batch_size", 128)
-                )
+            if monitor_source:
+                row["train/loss"] = float(loss.detach())
+                row["train/source_nll_weight"] = source_weight
+                if source_nll is not None:
+                    row["train/source_nll_per_dimension"] = float(source_nll.detach())
+                    row["train/weighted_source_nll"] = source_weight * float(source_nll.detach())
+            if validating:
+                with timer.measure("velocity_validation"):
+                    scores = validate(
+                        student, groups, energy, cfg.get("validation_batch_size", 128)
+                    )
                 if not all(torch.isfinite(torch.tensor(v)) for v in scores.values()):
                     raise FloatingPointError("Non-finite validation velocity error")
                 row.update({"validation/" + k: v for k, v in scores.items()})
+                source_score = None
+                if monitor_source:
+                    source_score = validate_source_density(
+                        student, source_validation, dataset.metadata.model_times[0],
+                        cfg.get("validation_batch_size", 128))
+                    row["validation/source_nll_per_dimension"] = source_score
+                    row["validation/source_cell_count"] = len(source_validation)
                 if scores["selection_score"] < best:
                     best, best_step = scores["selection_score"], step
-                    save(output / "checkpoints/best.pt", checkpoint(step))
+                    best_source_nll = source_score
+                    with timer.measure("checkpoint_io"):
+                        save(output / "checkpoints/best.pt", checkpoint(step))
                 if cfg.get("validation_population_metrics", True):
                     from flow2pc.evaluation.metric_flow import evaluate as population_evaluate, from_ali_dataset
-                    view = from_ali_dataset(dataset)
-                    scope = validation_scope(dataset, cfg)
-                    diagnostics = population_evaluate(student, teacher, view, {
-                        "samples": cfg.get("validation_batch_size", 128),
-                        "source_split": "all" if scope == "heldout_times" else "validation",
-                        "reference_split": "validation",
-                        "time_indices": view.heldout_indices if scope == "heldout_times" else view.observed_indices,
-                        "metric_space": "dataset", "solver": "dopri5", "seed": 2026,
-                    }, device)
+                    with timer.measure("population_diagnostics"):
+                        if is_otpfm:
+                            if diagnostic_view is None:
+                                diagnostic_view = from_ali_dataset(dataset)
+                            view = diagnostic_view
+                            indices = population_diagnostic_indices(view, cfg, config.get("evaluation", {}))
+                        else:
+                            view = from_ali_dataset(dataset)
+                            scope = validation_scope(dataset, cfg)
+                            indices = view.heldout_indices if scope == "heldout_times" else view.observed_indices
+                        scope = validation_scope(dataset, cfg)
+                        extra = {"teacher_cache": teacher_diagnostic_cache} if is_otpfm else {}
+                        diagnostics = population_evaluate(student, teacher, view, {
+                            "samples": cfg.get("validation_batch_size", 128),
+                            "source_split": "all" if scope == "heldout_times" else "validation",
+                            "reference_split": "validation", "time_indices": indices,
+                            "metric_space": "dataset", "solver": "dopri5", "seed": 2026,
+                        }, device, **extra)
+                    if teacher_diagnostic_cache is not None:
+                        row["timing/teacher_diagnostic_cache_hits"] = teacher_diagnostic_cache.hits
+                        row["timing/teacher_diagnostic_cache_misses"] = teacher_diagnostic_cache.misses
                     diagnostics["checkpoint_step"] = step
                     log_population_metrics(logger, diagnostics, namespace="validation")
                 print(
-                    f"step={step} velocity_mse={float(loss.detach()):.6g} validation_score={scores['selection_score']:.6g}",
+                    f"step={step} velocity_mse={float(velocity_loss.detach()):.6g} validation_score={scores['selection_score']:.6g}"
+                    + (f" source_val_nll_per_dim={source_score:.6g}" if source_score is not None else ""),
                     flush=True,
                 )
             if (
@@ -274,7 +400,13 @@ def _run_ali(config):
                 or step == cfg["steps"]
                 or "validation/selection_score" in row
             ):
-                save(last_path, checkpoint(step))
+                with timer.measure("checkpoint_io"):
+                    save(last_path, checkpoint(step))
+            row.update(timer.metrics())
+            if timer.enabled:
+                print(f"step={step} elapsed_seconds " + " ".join(
+                    f"{name}={seconds:.4f}" for name, seconds in timer.seconds.items()
+                ), flush=True)
             if (
                 step == 1
                 or step % cfg.get("log_every", 100) == 0
@@ -362,6 +494,8 @@ def _run_ali(config):
                 "steps": cfg["steps"],
                 "best_selection_score": best,
                 "best_step": best_step,
+                **({"best_source_nll_per_dimension": best_source_nll,
+                    "source_nll_weight": source_weight} if monitor_source else {}),
             },
         )
     except BaseException as error:

@@ -1,0 +1,43 @@
+# Evaluation only. Uses existing frozen checkpoints; never retrains.
+stage: evaluate
+experiment: e3_1
+dataset: cell_tracking
+teacher:
+  checkpoint: /data/pqhung_group/lthung/ali-cfm/changed_files/ali_cfm_model.pth
+  name: alicfm
+  legacy_metadata: /data/pqhung_group/lthung/flow2pc/configs/teacher_metadata/alicfm_cell_tracking.json
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/alicfm/selected-students/cell_tracking
+  metric: auto
+device: cuda:0
+evaluation:
+  student_inference: direct_pc
+  levels:
+  - 0.5
+  - 0.7
+  - 0.9
+  - 0.95
+  seeds:
+  - 0
+  - 1
+  - 2
+  bank_sizes:
+  - 5000
+  - 10000
+  source_split: all
+  reference_split: protocol
+  hdr_representation: auto
+  time_indices:
+  - 0
+  - 24
+  - 49
+  - 74
+  - 99
+  - 114
+logging:
+  mode: online
+  project: flow2pc
+  name: cell_tracking-alicfm-e3_1-selected-emd-direct-pc
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_1/direct-pc-v1/alicfm/cell_tracking

@@ -10,6 +10,33 @@ from flow2pc.utils.checkpoint import atomic_json
 from flow2pc.utils.tracking import LocalLogger
 
 
+def _load_student(path, teacher, dataset, device):
+    """Restore the shared HCLT checkpoint; never initialize or train its source."""
+    import torch
+
+    from flow2pc.distill.student import build_student
+
+    saved = torch.load(path, map_location="cpu", weights_only=True)
+    binding, model = saved["binding"], saved["model_config"]
+    if binding["teacher_sha256"] != teacher.manifest["checkpoint_sha256"]:
+        raise ValueError("Student checkpoint belongs to another teacher")
+    if binding["dataset"] != dataset.contract():
+        raise ValueError("Student checkpoint data/preprocessing differs from this teacher")
+    if saved.get("best_step") != saved["step"]:
+        raise ValueError("Student evaluation requires the selected best checkpoint")
+    if model["name"] != "hclt" or model.get("fourier_zero_center", False):
+        raise ValueError("Expected the shared free-source HCLT checkpoint format")
+    student = build_student(
+        model["parents"],
+        {key: model[key] for key in ("num_latents", "time_embedding_dim", "time_feature_seed") if key in model},
+        clamp_derivative=model.get("clamp_scale_derivative", False),
+        time_order=model.get("time_order", 4),
+    ).to(device)
+    student.load_state_dict(saved["state_dict"], strict=True)
+    student.eval()
+    return student, saved["step"]
+
+
 def run(config, role):
     if config.get("evaluation", {}).get("protocol") == "native_otpfm":
         if role != "teacher" or config["stage"] != "pretrain" or config["model"]["name"] != "otpfm":
@@ -35,7 +62,6 @@ def run(config, role):
     else:
         # Imports for the student entry point never occur during teacher training.
         from flow2pc.distill.runner import prepare
-        from flow2pc.distill.student import load_for_evaluation
 
         teacher, dataset, _ = prepare(config)
         reference = (
@@ -43,7 +69,7 @@ def run(config, role):
         )
         if role == "student":
             run_dir = Path(config["output"]["dir"])
-            student, step = load_for_evaluation(
+            student, step = _load_student(
                 run_dir / "checkpoints/best.pt",
                 teacher,
                 dataset,

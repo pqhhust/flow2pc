@@ -1,5 +1,12 @@
 # Dataset benchmarks and student selection
 
+For the detailed cross-method data/training/evaluation handoff, see
+[Dataset training and evaluation reference](DATASET_TRAINING_EVALUATION.md).
+It records source-paper versus source-code differences, the lifted knot
+variant, tracking observation budgets, and transport W2 versus W2-squared
+selection. The implementation descriptions below do not certify that every
+current adapter or existing checkpoint follows an identical dataset protocol.
+
 Dataset conventions are independent of the teacher method. The references are
 [ALI-CFM, §4 and Appendix D](https://arxiv.org/html/2510.01159) for single-cell,
 ST, knot and tracking, and [OTP-FM, §6.4 and Appendices H–I](https://arxiv.org/html/2606.05327v1)
@@ -62,7 +69,12 @@ distance: the square root of OT with **squared** Euclidean costs. To match the
 released OTP-FM helper, its reference and prediction are truncated to equal
 length after seeded subsetting. W1 also remains available for common diagnostics.
 W1, W2 and W2-squared must not be compared as interchangeable scores. OTP-FM's
-teacher sweep uses average W2-squared selection; our PC selection remains MSE.
+paper describes average W2-squared teacher-checkpoint selection; the native
+callback supports it through `checkpoint_selection: mean_squared_w2`, but
+defaults to mean W2 when the key is absent. Inspect each saved run's actual rule.
+Our PC selection remains velocity MSE. For the main paper-target comparison,
+score the specified holdout times; retain GOM's source-code nearby-time minimum
+as a separately labeled native-parity diagnostic.
 
 `evaluation.metric_space: dataset` uses benchmark whitening for 5D single-cell
 representations and raw feature coordinates for higher-dimensional single-cell,
@@ -111,6 +123,12 @@ benchmark scores. Both figure sets are linked from `eval/media.json` and logged
 when W&B is available.
 
 ## Coupling and external source checkouts
+
+OTP-FM queries use its saved conditional tuple construction and coupling, with
+the selected checkpoint's fixed correction alpha and diagonal EMA velocity
+targets. The direct W2Inf cache was recovered from the successful historical
+integration; it adds no student training stage or loss. See
+[OTP distillation](OTPFM_DISTILLATION.md). Dataset validation policy stays as above.
 
 ALI queries use the frozen generator and recover coupling from the checkpoint's
 **CFM training settings**, ahead of old profile-only sampler tags:

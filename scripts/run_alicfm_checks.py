@@ -29,7 +29,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow2pc.utils.config import load_config  # noqa: E402
-from flow2pc.utils.gpu_queue import choose_device, next_task, stop_workers  # noqa: E402
+from flow2pc.utils.gpu_queue import choose_device, gpu_inventory, next_task, selected_devices, stop_workers  # noqa: E402
 
 TAGS = (
     "cite5",
@@ -59,69 +59,6 @@ def atomic_json(path, value):
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-
-
-def gpu_inventory():
-    try:
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,uuid,memory.free",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise RuntimeError(f"nvidia-smi query failed: {error}") from error
-    inventory = {}
-    for row in csv.reader(result.stdout.splitlines()):
-        if len(row) != 3:
-            continue
-        index, uuid, free = [value.strip() for value in row]
-        if not index.isdigit():
-            continue
-        inventory[index] = {
-            "uuid": uuid,
-            "free": max(0, int(free)) * 2**20 if free.isdigit() else 0,
-        }
-    return inventory
-
-
-def selected_devices(value, inventory):
-    def resolve(token):
-        token = token.strip()
-        if token in inventory:
-            return token
-        matches = [
-            index
-            for index, row in inventory.items()
-            if token and row["uuid"].startswith(token)
-        ]
-        if len(matches) == 1:
-            return matches[0]
-        raise ValueError(f"Unknown/ambiguous physical GPU index or UUID: {token}")
-
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-    allowed = (
-        list(inventory)
-        if visible is None
-        else [resolve(token) for token in visible.split(",") if token.strip()]
-    )
-    devices = (
-        allowed if value == "auto" else [resolve(token) for token in value.split(",")]
-    )
-    if len(devices) < 2 or len(set(devices)) != len(devices):
-        raise ValueError(
-            "Select at least two distinct GPUs; no CPU or single-GPU fallback"
-        )
-    if set(devices) - set(allowed):
-        raise ValueError(
-            "Requested GPUs are outside the inherited CUDA_VISIBLE_DEVICES allocation"
-        )
-    return devices
 
 
 @dataclass

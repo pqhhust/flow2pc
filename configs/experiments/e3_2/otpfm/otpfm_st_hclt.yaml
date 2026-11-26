@@ -1,0 +1,32 @@
+# Evaluation only: fixed checkpoints, same-time missing coordinates, no SD-ECE.
+stage: evaluate
+experiment: e3_2
+dataset: st
+teacher:
+  name: otpfm
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/st/checkpoints/last.pt
+selection:
+  student_roots:
+  - /data/lthung/flow2pc/distill/student-sweep-100/otpfm/st
+  metric: validation_selection_score
+device: cuda:0
+evaluation:
+  student_inference: direct_pc
+  time_indices: [1]
+  observed_masks: [[0], [1]]
+  levels: [0.5, 0.7, 0.9, 0.95]
+  seeds: [0, 1, 2]
+  bank_sizes: [2000, 5000]
+  conditional_draw_sizes: [256, 512]
+  condition_bandwidths: [0.05, 0.1, 0.2]
+  primary_bandwidth: 0.1
+  min_effective_components: 20
+  source_split: all
+  reference_split: test
+  max_test_samples: 2048
+logging:
+  mode: online
+  project: flow2pc
+  name: st-otpfm-e3_2-selected-mse-direct-pc
+output:
+  dir: /data/lthung/flow2pc/experiments/e3_2/direct-pc-v1/otpfm/st

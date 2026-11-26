@@ -1,5 +1,9 @@
-# Best completed sweep run: beijing-h256-glr0.0005-vlr0.001-ts0.01-reg0-border-R3GAN-s42-2ceb1b2818
-# teacher_heldout_emd: 12.58196220240298; 512/512 completed.
+# Verified W2 sweep winner: beijing-h256-glr0.0005-vlr0.001-ts0.01-reg0-border-R3GAN-s42-2ceb1b2818
+# Selected by mean raw-coordinate W2 across the four temporal validation holdouts.
+# teacher_heldout_w2: 17.082020209114127; 512/512 re-evaluated (2026-11-13).
+# Also the W1 winner; teacher_heldout_emd: 12.581962202402977.
+# Retained teacher CFM and generator tensors match this winner exactly.
+# W2 ranking: /data/lthung/flow2pc/alicfm-transport/sweep-512/summary.csv
 # Exact scientific settings from the saved resolved_config.yaml.
 # Selected existing checkpoint and selection scope: docs/selected_teachers.json
 stage: pretrain
@@ -50,6 +54,7 @@ logging:
 output:
   dir: /data/lthung/flow2pc/pretrain/alicfm/beijing/best-config-seed42
 evaluation:
+  # Beijing evaluation uses teacher_heldout_w2 as primary; W1 remains a diagnostic.
   enabled: true
   num_samples: 0
   metric_samples: 1024

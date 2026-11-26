@@ -1,14 +1,18 @@
-# Frozen selected ALI-CFM teacher; velocity MSE selects the student.
-# Temporal holdouts are validation, not untouched test populations.
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/alicfm/beijing/best_config.yaml
+# Selected best.pt step: 20000; validation score: 0.00033701999962.
+# Retains the winning run output directory and its saved evaluation protocol.
 stage: distill
 seed: 0
 teacher:
-  checkpoint: /data/lthung/flow2pc/alicfm-transport/sweep-512/beijing/beijing-h256-glr0.0005-vlr0.001-ts0.01-reg0-border-R3GAN-s42-2ceb1b2818/checkpoints/last.pt
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/alicfm/beijing/checkpoints/last.pt
+  format: framework
+  name: alicfm
 student:
   name: hclt
   params:
-    num_latents: 128
-    time_embedding_dim: 32
+    num_latents: 192
+    time_embedding_dim: 128
     time_feature_seed: 0
 distillation:
   sampler:
@@ -17,7 +21,7 @@ distillation:
   device: cuda:0
   steps: 20000
   batch_size: 64
-  lr: 0.001
+  lr: 0.002
   validate_every: 1000
   checkpoint_every: 1000
   log_every: 100
@@ -28,9 +32,9 @@ distillation:
 logging:
   mode: online
   project: flow2pc
-  name: beijing-alicfm-hclt-h128-lr0.001-s0
+  name: beijing-alicfm-hclt-h192-f128-lr0.002-b64-n20000-s0-48260a060935
 output:
-  dir: /data/lthung/flow2pc/distill/alicfm/beijing/hclt-best-teacher-seed0
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/alicfm/beijing/beijing-alicfm-hclt-h192-f128-lr0.002-b64-n20000-s0-48260a060935
 evaluation:
   enabled: true
   num_samples: 0

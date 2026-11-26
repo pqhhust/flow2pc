@@ -1,6 +1,12 @@
 # Selected ALI-CFM and OTP-FM teachers
 
-Selection snapshot: 2026-11-05. Each preset copies the winning run’s seed,
+2026-11-13 correction: ALI-CFM GOM/Beijing below are the retained **W1-selected**
+recipes. Pretraining evaluation and sweep selection now use W2; no new W2
+ranking is claimed until the evaluation-only recovery finishes. Existing teacher
+checkpoints remain usable for ongoing experiments. See
+[the correction and scripts](TRANSPORT_W2_CORRECTION.md).
+
+Selection snapshots: real datasets 2026-11-05; Arch/Sphere/LiDAR 2026-11-06. Each preset copies the winning run’s seed,
 data/preprocessing, model parameters, training budget and evaluation settings.
 Only the output directory and W&B run name change for a new pretraining run.
 Selected existing checkpoint paths, original resolved-config paths, hashes,
@@ -31,7 +37,7 @@ holdouts. Those holdouts are tuning/validation populations, not an untouched
 test set. Beijing remains in its original representation; no log transform or
 prediction clipping was introduced.
 
-OTP-FM was selected from the 315 completed runs in its 1,000-run sweep.
+OTP-FM single-cell/ST/knot/tracking teachers were selected from the 315 completed runs in their 1,000-run sweep.
 The remaining 685 runs are marked failed in the saved summary; these presets
 are best among the completed models, not evidence that all 100 settings per
 dataset finished. Single-cell includes CITE and Multi at 5D, 50D and 100D,
@@ -45,6 +51,31 @@ or different evaluation protocols are not interchangeable.
 The selected checkpoint files were verified against the SHA-256 recorded in
 their manifests. Saved metrics and ranking files agree with the selected
 rows. No checkpoint, data array, running sweep or existing output was changed.
+
+## Selected synthetic teachers
+
+The Arch/Sphere/LiDAR sweep ended with 548 completed, 928 failed and 60
+blocked runs out of 1,536 planned configurations. Only completed models
+were eligible. Ranking uses reserved endpoint-row validation W1 from
+`eval/selection.json`; Arch/Sphere middle-time test EMD never selects a model.
+LiDAR retains its saved standardized metric coordinates; Arch/Sphere use
+identity coordinates. These remain two-observation baselines, with no added
+manifold/terrain objective.
+
+| Teacher | Dataset | Endpoint validation W1 ↓ | Middle-time test W1 ↓ | Complete / planned | Pretrain | Distill |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| alicfm | arch | 0.033440 | 0.631537 | 95 / 256 | [YAML](../configs/pretrain/alicfm/alicfm_arch.yaml) | [HCLT](../configs/distill/alicfm/alicfm_arch_hclt.yaml) |
+| alicfm | sphere | 0.081391 | 0.659763 | 95 / 256 | [YAML](../configs/pretrain/alicfm/alicfm_sphere.yaml) | [HCLT](../configs/distill/alicfm/alicfm_sphere_hclt.yaml) |
+| alicfm | lidar | 0.037562 | — | 87 / 256 | [YAML](../configs/pretrain/alicfm/alicfm_lidar.yaml) | [HCLT](../configs/distill/alicfm/alicfm_lidar_hclt.yaml) |
+| otpfm | arch | 0.031111 | 0.627394 | 93 / 256 | [YAML](../configs/pretrain/otpfm/otpfm_arch.yaml) | [HCLT](../configs/distill/otpfm/otpfm_arch_hclt.yaml) |
+| otpfm | sphere | 0.149838 | 0.760534 | 92 / 256 | [YAML](../configs/pretrain/otpfm/otpfm_sphere.yaml) | [HCLT](../configs/distill/otpfm/otpfm_sphere_hclt.yaml) |
+| otpfm | lidar | 0.034300 | — | 86 / 256 | [YAML](../configs/pretrain/otpfm/otpfm_lidar.yaml) | [HCLT](../configs/distill/otpfm/otpfm_lidar_hclt.yaml) |
+
+The six pretrain presets reproduce the winning saved settings in a new
+output directory. The six distill presets directly reference the existing
+winning checkpoints, so using them does not retrain a teacher. Student
+architecture, optimizer and velocity-MSE objective remain the existing recipe;
+selection uses reserved observed rows and leaves the middle time for testing.
 
 ## Using the selected teachers
 
@@ -64,11 +95,10 @@ Their output directories are under `/data/lthung/flow2pc/distill/alicfm/`.
 If retraining a teacher, explicitly point `teacher.checkpoint` to the new
 teacher rather than continuing to reference the archived sweep winner.
 
-OTP-FM teacher pretraining and frozen velocity export are integrated, but the
-organized student runner still lacks its native conditional-tuple sampler.
-This config update does not implement that sampler or advertise an OTP-FM
-student recipe as runnable. Selected OTP-FM teachers remain available through
-the checkpoint paths in the index.
+OTP-FM student presets now use the restored conditional-tuple sampler, with the
+existing HCLT student and velocity-MSE training. Each selected teacher has a
+`distill_config` in the index. See [the restored integration](OTPFM_DISTILLATION.md)
+for commands, validation policy and supported direct W2Inf paths.
 
 The Arch/Sphere/LiDAR sweep settings and its endpoint-only interpretation
 remain as documented in [MFM_TEACHER_SWEEP.md](MFM_TEACHER_SWEEP.md).

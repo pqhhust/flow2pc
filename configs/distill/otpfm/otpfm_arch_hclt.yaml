@@ -1,0 +1,52 @@
+# Selected from the completed 100-configuration student sweep by validation velocity score.
+# Source: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/arch/best_config.yaml
+# Selected best.pt step: 20000; validation score: 1.81730767963e-05.
+# Retains the winning run output directory and its saved evaluation protocol.
+stage: distill
+seed: 0
+teacher:
+  name: otpfm
+  data_root: /data/pqhung_group/pdtung/flow2pc/data/arch/seed42
+  checkpoint: /data/lthung/flow2pc/pretrained-teachers/otpfm/arch/checkpoints/last.pt
+  format: framework
+student:
+  name: hclt
+  params:
+    num_latents: 256
+    time_embedding_dim: 128
+    time_feature_seed: 0
+distillation:
+  sampler:
+    name: otpfm_conditional
+    params: {}
+  device: cuda:0
+  steps: 20000
+  batch_size: 64
+  lr: 0.003
+  validate_every: 1000
+  checkpoint_every: 1000
+  log_every: 100
+  validation_batches: 4
+  validation_batch_size: 128
+  resume: true
+  validation_scope: observed_rows
+logging:
+  mode: online
+  project: flow2pc
+  name: arch-otpfm-hclt-h256-f128-lr0.003-b64-n20000-s0-131df7b5af6e
+output:
+  dir: /data/lthung/flow2pc/distill/student-sweep-100/otpfm/arch/arch-otpfm-hclt-h256-f128-lr0.003-b64-n20000-s0-131df7b5af6e
+evaluation:
+  enabled: true
+  num_samples: 512
+  metric_samples: 512
+  seed: 2026
+  batch_size: 128
+  tolerance: 1.0e-05
+  max_nfe: 20000
+  solver: dopri5
+  ode_steps: 100
+  metric_space: historical
+  source_split: all
+  reference_split: all
+  protocol: shared_ode

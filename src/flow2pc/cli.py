@@ -55,6 +55,19 @@ def main(argv=None):
         return 0
     try:
         config = load_config(args.config, args.set)
+        if isinstance(config, dict) and "experiment" in config:
+            if args.evaluate:
+                raise ValueError("Experiment configs already evaluate teacher/student pairs; omit --evaluate")
+            if args.validate_only:
+                from flow2pc.experiments.selection import select_student
+
+                print(json.dumps({"config": config, "selection": select_student(config),
+                                  "validation": "metadata only; no model, GPU or dataset loaded"}, indent=2))
+            else:
+                from flow2pc.experiments import run
+
+                print(json.dumps(run(config), indent=2))
+            return 0
         if args.evaluate:
             if isinstance(config, tuple):
                 raise ValueError(
@@ -111,7 +124,7 @@ def main(argv=None):
                         {
                             "config": config,
                             "dataset": dataset.contract(),
-                            "sampler": sampler,
+                            "sampler": sampler if isinstance(sampler, str) else sampler.contract,
                             "teacher_frozen": not any(
                                 p.requires_grad for p in teacher.parameters()
                             ),
