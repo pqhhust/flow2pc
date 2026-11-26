@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/cite50/seed42
+  root: data/cite50/seed42
   params:
     profile: cite50
 training:

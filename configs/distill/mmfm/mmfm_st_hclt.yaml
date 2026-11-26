@@ -5,7 +5,7 @@ teacher:
   checkpoint: outputs/mmfm/st/pretrain/checkpoints/best.pt
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/st/seed42
+  root: data/st/seed42
 student:
   name: hclt
   params: {}

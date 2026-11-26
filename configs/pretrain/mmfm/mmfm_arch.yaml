@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/arch/seed42
+  root: data/arch/seed42
   params:
     profile: arch
 training:

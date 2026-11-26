@@ -18,6 +18,7 @@ class TemporalDataModule(pl.LightningDataModule):
         self.save_hyperparameters()
 
         self.data_type = args.data_type
+        self.data_name = args.data_name
         self.data_path = args.data_path
         self.batch_size = args.batch_size
         self.split_ratios = args.split_ratios
@@ -36,6 +37,7 @@ class TemporalDataModule(pl.LightningDataModule):
             ds, labels, unique_labels = custom_load_dataset(
                 self.data_path,
                 max_dim=self.max_dim,
+                label_name="sample_labels" if self.data_name == "eb" else "day",
             )
         elif self.data_type == "arch":
             ds, labels, unique_labels = generate_arch_data()
@@ -152,9 +154,9 @@ def tnet_dataset(
     return data, labels, unique_labels
 
 
-def custom_load_dataset(path: str, max_dim: int = 100):
+def custom_load_dataset(path: str, max_dim: int = 100, label_name: str = "day"):
     if path.endswith("h5ad"):
-        return adata_dataset(path, max_dim=max_dim)
+        return adata_dataset(path, max_dim=max_dim, label_name=label_name)
     if path.endswith("npz"):
         return tnet_dataset(path, max_dim=max_dim)
     raise NotImplementedError(f"File extension not supported for path: {path}")

@@ -35,7 +35,7 @@ def path(value):
 def prepare(config):
     """Metadata-only resolution; no model imports, data materialization or writes."""
     config = copy.deepcopy(config)
-    allowed = {"stage", "seed", "model", "data", "training", "output", "wandb"}
+    allowed = {"stage", "seed", "model", "data", "training", "output", "wandb", "evaluation"}
     if set(config) - allowed or config.get("stage") != "pretrain":
         raise ValueError("Invalid snapshot pretraining configuration")
     for key in ("model", "data", "output"):
@@ -51,8 +51,10 @@ def prepare(config):
     data = config["data"]
     if set(data) - {"name", "root", "params"} or data["name"] != "mfm_snapshots":
         raise ValueError("Snapshot training requires data.name=mfm_snapshots")
-    if set(data.get("params", {})) != {"profile"}:
-        raise ValueError("data.params requires only profile")
+    if ("profile" not in data.get("params", {}) or set(data["params"]) - {"profile", "st_native_root", "st_heldout_index"}
+            or (set(data["params"]) & {"st_native_root", "st_heldout_index"} and data["params"]["profile"] != "st")
+            or ("st_heldout_index" in data["params"] and (type(data["params"]["st_heldout_index"]) is not int or data["params"]["st_heldout_index"] not in (1, 2) or not data["params"].get("st_native_root")))):
+        raise ValueError("data.params requires profile; st_native_root is only valid for ST")
     spec = profile(data["params"]["profile"])
     seed = config.setdefault("seed", 42)
     if type(seed) is not int or not 0 <= seed < 2**32:
@@ -116,6 +118,11 @@ def prepare(config):
     config["data"]["root"] = str(path(data["root"]))
     config["output"]["dir"] = str(path(config["output"]["dir"]))
     config["training"] = settings
+    if "evaluation" in config:
+        from flow2pc.evaluation.config import resolve_evaluation
+        if data["params"].get("profile") != "st" or not data["params"].get("st_native_root"):
+            raise ValueError("Shared ALI evaluation is only supported with ST native data")
+        config["evaluation"] = resolve_evaluation(config["evaluation"])
     return {"method": "mfm", "backend": "snapshots", "config": config, "dim": spec["dim"]}
 
 
@@ -150,6 +157,15 @@ def run(resolved):
     source, output = params["source_root"], Path(config["output"]["dir"])
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"Refusing to overwrite nonempty run: {output}")
+    native_root = config["data"]["params"].get("st_native_root")
+    if native_root:
+        from flow2pc.data.mfm_snapshots import prepare_dataset
+        destination = Path(config["data"]["root"])
+        if destination.name != f"seed{config['seed']}" or destination.parent.name != "st":
+            raise ValueError("ST native data.root must end in st/seed<seed>")
+        prepare_dataset("st", destination.parent.parent, config["seed"], source,
+                        st_native_root=path(native_root),
+                        st_heldout_index=config["data"]["params"].get("st_heldout_index", 1))
     data = load({"data_dir": config["data"]["root"]}, {})
     if data.source_info["profile"] != config["data"]["params"]["profile"]:
         raise ValueError("Prepared profile does not match config")

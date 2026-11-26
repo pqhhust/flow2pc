@@ -42,6 +42,7 @@ def test_native_mfm_pretraining_uses_paired_source_config(tmp_path):
     assert stage == "pretrain"
     assert resolved["native_config"] == str(native)
     assert resolved["command"][1:3] == ["-m", "mfm.train.main"]
+    assert resolved["command"][resolved["command"].index("--wandb_group") + 1] == "arch-mfm"
     assert resolved["input_name"] is None
     assert not (tmp_path / "output").exists()
 

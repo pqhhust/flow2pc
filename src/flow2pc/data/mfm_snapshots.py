@@ -106,7 +106,7 @@ def read_source(name, root, seed, source_root):
             # Only call the raw reader; its native_all constructor is not used.
             params = {"normalise": False, "whiten": True, "preprocessing_protocol": "native_all"}
         elif family == "knot":
-            params = {"size": 120, "samples_per_time": 10, "noise_std": 0.01}
+            params = {"size": 120, "samples_per_time": 240, "noise_std": 0.01}
         reader = SimpleNamespace(root=sources, name=family, params=params, seed=seed)
         clouds, physical, labels, provenance = cls.read_source(reader)
         files = [sources / p for p in provenance.get("files", {})]
@@ -164,21 +164,51 @@ def split_and_normalize(clouds, spec, seed, fixed=None):
     return normalized, splits, normalization
 
 
-def prepare_dataset(name, root, seed, source_root, *, catalog_root=None):
+def prepare_dataset(name, root, seed, source_root, *, catalog_root=None, st_native_root=None, st_heldout_index=1):
     spec = profile(name)
+    if st_heldout_index not in (1, 2) or (st_heldout_index != 1 and (name != "st" or st_native_root is None)):
+        raise ValueError("ST heldout index must be 1 or 2 and requires the native ST protocol")
+    if name == "st" and st_native_root is not None:
+        spec = {**spec, "holdouts": [st_heldout_index]}
     destination = prepared_path(root, name, seed)
     if destination.exists():
         manifest = read_manifest(destination)
-        if manifest["profile"] != name or manifest["spec"] != spec or manifest["split_seed"] != seed:
+        if (manifest["profile"] != name or manifest["spec"] != spec or manifest["split_seed"] != seed
+                or (manifest.get("split_protocol") == "st_native_independent_validation") != (st_native_root is not None)):
             raise ValueError("Prepared profile differs; choose a fresh data root")
+        if st_native_root is not None and Path(manifest["provenance"]["ali_dataset_contract"]["root"]).resolve() != Path(st_native_root).resolve():
+            raise ValueError("Prepared ST source root differs; choose a fresh data root")
         for record in manifest["source_files"]:
             if fingerprint(record["path"]) != record["sha256"]:
                 raise ValueError("Source changed; preserve prepared data and use a fresh data root")
         return destination
-    clouds, info, fixed, metric_reference = read_source(
-        name, catalog_root if catalog_root is not None else root, seed, source_root
-    )
-    clouds, splits, normalization = split_and_normalize(clouds, spec, seed, fixed)
+    if st_native_root is not None:
+        if name != "st":
+            raise ValueError("Native ALI data protocol is only supported for ST")
+        from flow2pc.data.temporal import SpatialTranscriptomics
+        dataset = SpatialTranscriptomics(name="st", root=st_native_root, seed=seed, params={
+            "heldout_index": st_heldout_index, "normalise": True, "whiten": False,
+            "validation_fraction": 0.05, "test_fraction": 0.05,
+            "preprocessing_protocol": "native_all"})
+        clouds = [x.numpy() for x in dataset.clouds]
+        splits = [{"train": (np.concatenate((dataset.rows[i]["train"], dataset.rows[i]["test"])).astype(np.int64) if i in dataset.observed else np.array([], dtype=np.int64)),
+                   "validation": dataset.rows[i]["val"].astype(np.int64)}
+                  for i, x in enumerate(clouds)]
+        normalization = {**dataset.preprocessing, "mean": dataset.preprocessing["shift"]}
+        info = {"labels": dataset.labels, "physical_times": list(dataset.metadata.physical_times),
+                "physical_time_units": dataset.source["physical_time_units"],
+                "model_times": list(dataset.metadata.model_times),
+                "time_transform": "ordinal_snapshot_index_to_unit_interval",
+                "source_files": [{"path": str((Path(st_native_root) / name).resolve()), "sha256": sha}
+                                 for name, sha in dataset.source["files"].items()],
+                "provenance": {"ali_dataset_contract": dataset.contract(), "ali_preprocessing": dataset.preprocessing},
+                "has_trajectory_ids": False}
+        fixed, metric_reference = None, None
+    else:
+        clouds, info, fixed, metric_reference = read_source(
+            name, catalog_root if catalog_root is not None else root, seed, source_root
+        )
+        clouds, splits, normalization = split_and_normalize(clouds, spec, seed, fixed)
     if spec["family"] == "lidar":
         # Native loader has already applied this scaler. Record it for inverse
         # transforms without applying it a second time to the saved coordinates.
@@ -204,7 +234,8 @@ def prepare_dataset(name, root, seed, source_root, *, catalog_root=None):
                 np.save(temporary / filename, values, allow_pickle=False)
                 arrays[filename] = fingerprint(temporary / filename)
         manifest = {"format": FORMAT, "profile": name, "spec": spec, **info,
-                    "split_seed": seed, "split_protocol": "exported_90_10" if fixed else "independent_rows_90_10_observed_only",
+                    "split_seed": seed, "split_protocol": ("st_native_independent_validation" if st_native_root is not None else
+                                       "exported_90_10" if fixed else "independent_rows_90_10_observed_only"),
                     "normalization": normalization, "heldout_indices": spec["holdouts"],
                     "marginal_sizes": [len(x) for x in clouds], "arrays": arrays,
                     "metric_reference_count": len(metric_reference) if metric_reference is not None else 0,
@@ -268,6 +299,10 @@ def load(config, context):
         if i in manifest["heldout_indices"]:
             if len(combined):
                 raise ValueError("Temporal test holdout entered train/validation")
+        elif manifest["split_protocol"] == "st_native_independent_validation":
+            if (manifest["profile"] != "st" or not all(len(x) for x in indices.values())
+                    or not np.array_equal(np.sort(combined), np.arange(len(values)))):
+                raise ValueError("Invalid ST native independent training/validation indices")
         elif not all(len(x) for x in indices.values()) or not np.array_equal(np.sort(combined), np.arange(len(values))):
             raise ValueError("Saved train/validation splits overlap or do not partition observations")
         marginals.append(values)

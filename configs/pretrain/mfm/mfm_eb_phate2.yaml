@@ -45,5 +45,6 @@ training:
 output:
   dir: outputs/pretrain/mfm/eb_phate2/default
 wandb:
+  group: eb_phate2-mfm
   project: flow2pc
   mode: online

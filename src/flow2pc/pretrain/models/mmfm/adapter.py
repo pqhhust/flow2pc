@@ -35,10 +35,24 @@ class LoadedMMFM:
     metadata: dict
     source_root: str
 
-    def velocity(self, values, time, context=None):
+    def velocity(self, values, time, *, context=None):
         if context is not None:
             raise ValueError("Unconditional MMFM does not accept context")
-        return model_velocity(self.model, values, time)
+        dim = self.metadata["model_config"]["data_dim"]
+        if values.ndim != 2 or not len(values) or values.shape[1] != dim:
+            raise ValueError(f"Expected nonempty [B, {dim}] states")
+        parameter = next(self.model.parameters())
+        if values.device != parameter.device or values.dtype != parameter.dtype:
+            raise ValueError("Input device and dtype must match the loaded MMFM teacher")
+        times = torch.as_tensor(time, device=values.device, dtype=values.dtype)
+        if times.ndim > 1 or (times.ndim == 1 and len(times) != len(values)):
+            raise ValueError("Model time must be scalar or have shape [B]")
+        if not torch.isfinite(values).all() or not torch.isfinite(times).all():
+            raise ValueError("States and model times must be finite")
+        result = model_velocity(self.model, values, times)
+        if result.shape != values.shape or not torch.isfinite(result).all():
+            raise ValueError("MMFM teacher returned an invalid velocity")
+        return result
 
 
 def load_teacher(options, device="cpu"):

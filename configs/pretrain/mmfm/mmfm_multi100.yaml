@@ -9,7 +9,7 @@ model:
     flow_variance: adaptive2-4-0.01
 data:
   name: mfm_snapshots
-  root: data/mfm/prepared/multi100/seed42
+  root: data/multi100/seed42
   params:
     profile: multi100
 training:

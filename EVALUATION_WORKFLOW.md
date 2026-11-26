@@ -54,6 +54,21 @@ For concurrent checks of all ten datasets, use the recovered shared GPU queue
 described in [parallel launch instructions](docs/PARALLEL_CHECKS.md). Its local
 recipe lives in the Git-ignored `local_runs/` folder.
 
+## MFM student tuning figures
+
+To render saved MFM-distilled student checkpoints for Arch, Sphere, or LiDAR:
+
+```bash
+python scripts/plot_mfm.py --datasets arch sphere lidar --checkpoint best --device cpu
+```
+
+The default checkpoint root is `outputs/tuning/mfm`; use `--root` to change it
+and `--checkpoint last` to select the last checkpoint. The plotting code lives
+in `flow2pc.evaluation.mfm_student_plots`; the script supplies the student
+constructor and discovers checkpoints. It preserves the original MFM plotting
+protocol: Euler trajectories with 100 steps and matching dataset identity
+checks. Images and `pretrain_plots.json` are written in each run directory.
+
 ## Figures and metrics
 
 Every evaluation writes `metrics.json`, `marginal_metrics.csv`, `media.json`,
